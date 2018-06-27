@@ -131,5 +131,7 @@ dependencies:
     - termcolor==1.1.0
     - torch==0.4.0
     - werkzeug==0.14.1
+    - git+git://github.com/openai/gym.git@5404b39
+    - git+git://github.com/AdamGleave/baselines.git@hotfixes#egg=hotfixes
 prefix: /home/aaron/anaconda3/envs/atari-irl
 
