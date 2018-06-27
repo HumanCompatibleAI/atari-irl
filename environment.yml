@@ -69,6 +69,7 @@ dependencies:
     - bleach==1.5.0
     - click==6.7
     - cloudpickle==0.5.3
+    - cycler==0.10.0
     - cython==0.28.3
     - decorator==4.3.0
     - dill==0.2.8.2
@@ -91,7 +92,9 @@ dependencies:
     - jupyter-client==5.2.3
     - jupyter-console==5.2.0
     - jupyter-core==4.4.0
+    - kiwisolver==1.0.1
     - markdown==2.6.11
+    - matplotlib==2.2.2
     - mistune==0.8.3
     - mpi4py==3.0.0
     - mujoco-py==1.50.1.56
@@ -113,6 +116,7 @@ dependencies:
     - python-utils==2.3.0
     - pyzmq==17.0.0
     - qtconsole==4.3.1
+    - seaborn==0.8.1
     - send2trash==1.5.0
     - simplegeneric==0.8.1
     - tensorboard==1.8.0
