@@ -1,0 +1,85 @@
+"""
+This may all be thrown away soonish, but I could imagine keeping these design
+patterns in some form or other.
+
+I hope that most of our patches to the baselines + gym code can happen in this
+library, and not need to move into other parts of the code.
+
+Desiderata:
+- Not introduce too many dependencies over Adam's patched baselines library
+- Basically work and be easy to use
+- Contain most of our other patches over other libraries
+- Generate useful information about whether or not we want to keep this
+  incarnation of things
+
+This is heavily based on
+- https://github.com/openai/baselines/blob/master/baselines/ppo2/run_mujoco.py
+- https://github.com/AdamGleave/baselines/tree/master/baselines/ppo2
+"""
+
+import numpy as np
+from baselines.common.cmd_util import mujoco_arg_parser
+from baselines import bench, logger
+import tensorflow as tf
+
+from baselines.common import set_global_seeds
+from baselines.common.vec_env.vec_normalize import VecNormalize
+from baselines.ppo2 import ppo2
+from baselines.ppo2.policies import MlpPolicy, CnnPolicy
+import gym
+from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+
+class PPOInterfaceContext():
+    """
+    A context for running PPO steps on a model
+
+    This context is intended to help with cleanup and teardown of our
+    tensorflow session and environments. A lot of unexpected-by-me behavior
+    stems from having to do setup and teardown steps, and it seems like the
+    context abstraction is good for this -- we can just be inside a context,
+    and assume that it sets up + gets rid of itself correctly.
+    """
+    def __init__(
+            self,
+            env_name='CartPole-v1', normalize_env=True, ncpu=1, n_envs=1,
+            close_on_context_exit=True
+    ):
+        self.env_name = env_name
+        self.close_on_context_exit = close_on_context_exit
+
+        self.config = tf.ConfigProto(
+            allow_soft_placement=True,
+            intra_op_parallelism_threads=ncpu,
+            inter_op_parallelism_threads=ncpu,
+            device_count={'GPU': 2},
+            log_device_placement=True
+        )
+        self.tf_session_context = tf.Session(config=self.config)
+
+        def make_env():
+            env = gym.make(self.env_name)
+            env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
+            return env
+
+        dummy_vec = DummyVecEnv([make_env for _ in range(n_envs)])
+
+        if normalize_env:
+            self.environments = VecNormalize(dummy_vec)
+        else:
+            self.environments = dummy_vec
+
+    def __enter__(self):
+        self.tf_session_context.__enter__()
+        return self
+
+    def close(self, *args):
+        # TODO(Aaron): iterate through environments and close them for real
+        self.environments.close()
+
+        self.tf_session_context.__exit__(*args)
+        tf.reset_default_graph()
+
+    def __exit__(self, *args):
+        if self.close_on_context_exit:
+            self.close(*args)
