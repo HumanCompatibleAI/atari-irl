@@ -83,12 +83,24 @@ class PPOInterfaceContext():
         self.tf_session_context.__enter__()
         return self
 
-    def teardown(self, *args):
+    def teardown_environments(self):
         # TODO(Aaron): iterate through environments and close them for real
         self.environments.close()
 
+    def teardown_tf_session(self, *args):
+        # the tf session context wants exception parameters. If there weren't
+        # any, then our args should have been None
+        args = [None, None, None] if not args else args
         self.tf_session_context.__exit__(*args)
         tf.reset_default_graph()
+
+    def teardown(self, *args):
+        # the tf session context wants exception parameters. If there weren't
+        # any, then our args should have been None
+        args = [None, None, None] if not args else args
+
+        self.teardown_environments()
+        self.teardown_tf_session(*args)
 
     def __exit__(self, *args):
         if self.teardown_on_context_exit:
