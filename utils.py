@@ -43,7 +43,7 @@ class PPOInterfaceContext():
     def __init__(
             self,
             env_name='CartPole-v1', normalize_env=True, ncpu=1, n_envs=1,
-            close_on_context_exit=True
+            teardown_on_context_exit=True
     ):
         """
         Create a context for running PPO steps on a model
@@ -56,7 +56,7 @@ class PPOInterfaceContext():
             teardown_on_context_exit: whether or not to teardown on exit
         """
         self.env_name = env_name
-        self.teardown_on_context_exit = close_on_context_exit
+        self.teardown_on_context_exit = teardown_on_context_exit
 
         self.config = tf.ConfigProto(
             allow_soft_placement=True,
