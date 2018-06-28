@@ -94,3 +94,24 @@ class PPOInterfaceContext():
         if self.teardown_on_context_exit:
             self.teardown(*args)
 
+def run_policy(*, model, environments):
+    logger.configure()
+    logger.log("Running trained model")
+
+    # Initialize the stuff we want to keep track of
+    rewards = []
+
+    # Initialize our environment
+    done = [False]
+    obs = np.zeros((environments.num_envs,) + environments.observation_space.shape)
+    obs[:] = environments.reset()
+
+    # run the policy until done
+    while not any(done):
+        actions, _, _, _ = model.step(obs)
+        obs[:], reward, done, info = environments.step(actions)
+        rewards.append(reward)
+        environments.render()
+
+    logger.log("Survived {} time steps".format(len(rewards)))
+    logger.log("Got total reward {}\n".format(sum(rewards[:])))
