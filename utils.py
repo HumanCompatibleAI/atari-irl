@@ -106,6 +106,7 @@ class PPOInterfaceContext():
         if self.teardown_on_context_exit:
             self.teardown(*args)
 
+
 def run_policy(*, model, environments):
     logger.configure()
     logger.log("Running trained model")
