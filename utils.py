@@ -45,8 +45,18 @@ class PPOInterfaceContext():
             env_name='CartPole-v1', normalize_env=True, ncpu=1, n_envs=1,
             close_on_context_exit=True
     ):
+        """
+        Create a context for running PPO steps on a model
+
+        Args:
+            env_name: name of the environment we want to use
+            normalize_env: whether or not to normalize the environment
+            ncpu: number of operation parallelism threads
+            n_envs: number of environments
+            teardown_on_context_exit: whether or not to teardown on exit
+        """
         self.env_name = env_name
-        self.close_on_context_exit = close_on_context_exit
+        self.teardown_on_context_exit = close_on_context_exit
 
         self.config = tf.ConfigProto(
             allow_soft_placement=True,
@@ -73,7 +83,7 @@ class PPOInterfaceContext():
         self.tf_session_context.__enter__()
         return self
 
-    def close(self, *args):
+    def teardown(self, *args):
         # TODO(Aaron): iterate through environments and close them for real
         self.environments.close()
 
@@ -81,5 +91,6 @@ class PPOInterfaceContext():
         tf.reset_default_graph()
 
     def __exit__(self, *args):
-        if self.close_on_context_exit:
-            self.close(*args)
+        if self.teardown_on_context_exit:
+            self.teardown(*args)
+
