@@ -117,13 +117,13 @@ def run_policy(*, model, environments):
     logger.log("Got total reward {}\n".format(sum(rewards[:])))
 
 
-def train(*, env, policy, num_timesteps, seed):
+def train(*, environments, policy, num_timesteps, seed):
     set_global_seeds(seed)
 
     # this uses patched behavior, since baselines 1.5.0 doesn't return from
     # learn
     return ppo2.learn(
-        policy=policy, env=env, nsteps=2048, nminibatches=32,
+        policy=policy, env=environments, nsteps=2048, nminibatches=32,
         lam=0.95, gamma=0.99, noptepochs=10, log_interval=1,
         ent_coef=0.0, lr=3e-4, cliprange=0.2, total_timesteps=num_timesteps
     )
