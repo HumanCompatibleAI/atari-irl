@@ -84,8 +84,7 @@ class PPOInterfaceContext():
         return self
 
     def teardown_environments(self):
-        # TODO(Aaron): iterate through environments and close them for real
-        self.environments.close()
+        [monitor.unwrapped.close() for monitor in self.environments.unwrapped.envs]
 
     def teardown_tf_session(self, *args):
         # the tf session context wants exception parameters. If there weren't
