@@ -65,7 +65,7 @@ dependencies:
     - astor==0.6.2
     - atari-py==0.1.1
     - backcall==0.1.0
-    - baselines==0.1.5
+    - git+git://github.com/AdamGleave/baselines.git@hotfixes#egg=baselines
     - bleach==1.5.0
     - click==6.7
     - cloudpickle==0.5.3
@@ -113,7 +113,6 @@ dependencies:
     - send2trash==1.5.0
     - simplegeneric==0.8.1
     - tensorboard==1.8.0
-    - tensorflow==1.8.0
     - termcolor==1.1.0
     - terminado==0.8.1
     - testpath==0.3.1
