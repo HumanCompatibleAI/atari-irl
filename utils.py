@@ -285,6 +285,7 @@ def print_log(
         logger.logkv(lossname, lossval)
     logger.dumpkvs()
 
+
 class Learner:
     def __init__(self, policy_class, env, total_timesteps, seed, nsteps=2048,
                  ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
@@ -294,14 +295,10 @@ class Learner:
         set_global_seeds(seed)
 
         # Deal with constant arguments
-        if isinstance(lr, float):
-            lr = constfn(lr)
-        else:
-            assert callable(lr)
-        if isinstance(cliprange, float):
-            cliprange = constfn(cliprange)
-        else:
-            assert callable(cliprange)
+        if isinstance(lr, float): lr = constfn(lr)
+        else: assert callable(lr)
+        if isinstance(cliprange, float): cliprange = constfn(cliprange)
+        else: assert callable(cliprange)
 
         self.lr = lr
         self.cliprange = cliprange
@@ -332,15 +329,18 @@ class Learner:
         model = policy.model
         runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
 
+        # Set our major learner objects
         self.batching_config = batching_config
         self.policy = policy
         self.model  = model
         self.runner = runner
 
+        # Set our last few run configurations
         self.callbacks = []
         self.nbatch = nbatch
         self.nupdates = total_timesteps // nbatch
 
+        # Initialize the objects that will change as we learn
         self._update = 1
         self._epinfobuf = deque(maxlen=100)
         self._tfirststart = None
