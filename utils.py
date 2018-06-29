@@ -190,10 +190,7 @@ class EnvPolicy(Policy):
         return policy
 
 
-def run_policy(*, model, environments):
-    logger.configure()
-    logger.log("Running trained model")
-
+def run_policy(*, model, environments, render=True):
     # Initialize the stuff we want to keep track of
     rewards = []
 
@@ -207,10 +204,10 @@ def run_policy(*, model, environments):
         actions, _, _, _ = model.step(obs)
         obs[:], reward, done, info = environments.step(actions)
         rewards.append(reward)
-        environments.render()
+        if render:
+            environments.render()
 
-    logger.log("Survived {} time steps".format(len(rewards)))
-    logger.log("Got total reward {}\n".format(sum(rewards[:])))
+    return sum(rewards[:])
 
 from baselines.ppo2.ppo2 import Model, Runner, constfn, safemean
 from baselines.common import explained_variance
