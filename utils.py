@@ -285,16 +285,154 @@ def print_log(
         logger.logkv(lossname, lossval)
     logger.dumpkvs()
 
+class Learner:
+    def __init__(self, policy_class, env, total_timesteps, seed, nsteps=2048,
+                 ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
+                 gamma=0.99, lam=0.95, nminibatches=4, noptepochs=4,
+                 cliprange=0.2, normalize_env=True):
+        # Set the random seed
+        set_global_seeds(seed)
+
+        # Deal with constant arguments
+        if isinstance(lr, float):
+            lr = constfn(lr)
+        else:
+            assert callable(lr)
+        if isinstance(cliprange, float):
+            cliprange = constfn(cliprange)
+        else:
+            assert callable(cliprange)
+
+        self.lr = lr
+        self.cliprange = cliprange
+
+        total_timesteps = int(total_timesteps)
+
+        nenvs = env.num_envs
+        ob_space = env.observation_space
+        ac_space = env.action_space
+        nbatch = nenvs * nsteps
+        nbatch_train = nbatch // nminibatches
+        batching_config = BatchingConfig(
+            nbatch=nbatch, noptepochs=noptepochs, nenvs=nenvs, nsteps=nsteps,
+            nminibatches=nminibatches
+        )
+
+        model_args = dict(
+            policy=policy_class, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs,
+            nbatch_train=nbatch_train, nsteps=nsteps, ent_coef=ent_coef,
+            vf_coef=vf_coef, max_grad_norm=max_grad_norm
+        )
+        if normalize_env:
+            env = VecNormalize(env)
+            policy = EnvPolicy(model_args=model_args, envs=env)
+        else:
+            policy = Policy(model_args)
+
+        model = policy.model
+        runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
+
+        self.batching_config = batching_config
+        self.policy = policy
+        self.model  = model
+        self.runner = runner
+
+        self.callbacks = []
+        self.nbatch = nbatch
+        self.nupdates = total_timesteps // nbatch
+
+        self._update = 1
+        self._epinfobuf = deque(maxlen=100)
+        self._tfirststart = None
+        self._run_info = None
+        self._tnow = None
+        self._fps = None
+        self._lossvals = None
+
+    @property
+    def update(self):
+        return self._update
+
+    @property
+    def mean_reward(self):
+        return safemean([epinfo['r'] for epinfo in self._epinfobuf])
+
+    def step(self):
+        # initialize our start time if we haven't already
+        if not self._tfirststart:
+           self._tfirststart = time.time()
+
+        # compute our learning rate and clip ranges
+        assert self.nbatch % self.batching_config.nminibatches == 0
+        nbatch_train = self.nbatch // self.batching_config.nminibatches
+        tstart = time.time()
+        frac = 1.0 - (self._update - 1.0) / self.nupdates
+        lrnow = self.lr(frac)
+        cliprangenow = self.cliprange(frac)
+
+        # Run the model on the environments
+        self._run_info = RunInfo(*self.runner.run())
+        self._epinfobuf.extend(self._run_info.epinfos)
+
+        # Run the training steps for PPO
+        mblossvals = train_steps(
+            model=self.policy.model,
+            run_info=self._run_info,
+            batching_config=self.batching_config,
+            lrnow=lrnow,
+            cliprangenow=cliprangenow,
+            nbatch_train=nbatch_train
+        )
+
+        self._lossvals = np.mean(mblossvals, axis=0)
+        self._tnow = time.time()
+        self._fps = int(self.nbatch / (self._tnow - tstart))
+
+        for check, fn in self.callbacks:
+            if check(self.update):
+                fn(**locals())
+
+        self._update += 1
+        if self._update > self.nupdates:
+            logger.log("Warning, exceeded planned number of updates")
+
+    def register_callback(self, check, fn):
+        self.callbacks.append((check, fn))
+
+    @staticmethod
+    def check_update_interval(freq, include_first=True):
+        return lambda i: i % freq == 0 or include_first and i == 1
+
+    @staticmethod
+    def print_log(self, **kwargs):
+        print_log(
+            model=self.model, batching_config=self.batching_config,
+            update=self.update, epinfobuf=self._epinfobuf,
+            tfirststart=self._tfirststart, run_info=self._run_info,
+            lossvals=self._lossvals, fps=self._fps, tnow=self._tnow
+        )
+
+    def learn_and_yield(self, yield_fn, yield_freq, log_freq=None):
+        if log_freq:
+            self.register_callback(
+                self.check_update_interval(log_freq),
+                self.print_log
+            )
+        should_yield = self.check_update_interval(yield_freq)
+
+        while self.update < self.nupdates:
+            self.step()
+            if should_yield(self.update):
+                yield yield_fn(self)
+
+        yield yield_fn(self)
 
 def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
             vf_coef=0.5,  max_grad_norm=0.5, gamma=0.99, lam=0.95,
             log_interval=10, nminibatches=4, noptepochs=4, cliprange=0.2,
             yield_interval=0, save_interval=0, normalize_env=True):
 
-    if isinstance(lr, float): lr = constfn(lr)
-    else: assert callable(lr)
-    if isinstance(cliprange, float): cliprange = constfn(cliprange)
-    else: assert callable(cliprange)
+
     total_timesteps = int(total_timesteps)
 
     nenvs = env.num_envs
