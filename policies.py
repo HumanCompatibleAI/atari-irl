@@ -111,22 +111,45 @@ def run_policy(*, model, environments, render=True):
     return sum(rewards[:])
 
 
-def sample_trajectories(*, model, environments):
-    done = [False]
+def sample_trajectories(*, model, environments, n_trajectories=10):
+    # vectorized environments reset after done
+    # pirl format: [
+    #    (observations, actions), <- single trajectory same length for both
+    #    (observations, actions),
+    #    ...
+    # ]
+    # airl format: [ <- if airl accepts this list, then we're happy
+    #    {observations: numpy array, actions: numpy array}, <- single trajectory
+    #    {observations: numpy array, actions: numpy array},
+    #    ...
+    # ]
+    # simple simulated robotics can work with 1 trajectory, 5-10 for harder, scales
+    # with complexity
+    completed_trajectories = []
+    observations = [[] for _ in range(environments.num_envs)]
+    actions = [[] for _ in range(environments.num_envs)]
 
-    trajectories = [[] for _ in range(environments.num_envs)]
-    finished = [False for _ in range(environments.num_envs)]
+    obs = environments.reset()
+    while len(completed_trajectories) < n_trajectories:
+        acts, _, _, _ = model.step(obs)
 
-    observations = environments.reset()
-    dones = [False for _ in range(environments.num_envs)]
-    while not all(finished):
-        actions, _, _, _ = model.step(observations)
-        for i, (obs, action, done) in enumerate(zip(observations, actions, dones)):
-            if not finished[i]:
-                trajectories[i].append((obs, action))
+        # We append observation, actions tuples here, since they're defined now
+        for i, (o, a) in enumerate(zip(obs, acts)):
+            observations[i].append(o)
+            actions[i].append(a)
+
+        # Figure out our consequences
+        obs, _, dones, _ = environments.step(acts)
+
+        # If we're done, then append that trajectory and restart
+        for i, done in enumerate(dones):
             if done:
-                finished[i] = True
+                completed_trajectories.append({
+                    'observations': np.vstack(observations[i]),
+                    'actions': np.vstack(actions[i])
+                })
+                observations[i] = []
+                actions[i] = []
 
-        observations, _, dones, _ = environments.step(actions)
-
-    return trajectories
+    np.random.shuffle(completed_trajectories)
+    return completed_trajectories[:n_trajectories]
