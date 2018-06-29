@@ -1,6 +1,6 @@
 import numpy as np
 from baselines.ppo2.ppo2 import Model
-from . import environments
+import environments
 import os
 import os.path as osp
 import joblib
@@ -109,3 +109,24 @@ def run_policy(*, model, environments, render=True):
             environments.render()
 
     return sum(rewards[:])
+
+
+def sample_trajectories(*, model, environments):
+    done = [False]
+
+    trajectories = [[] for _ in range(environments.num_envs)]
+    finished = [False for _ in range(environments.num_envs)]
+
+    observations = environments.reset()
+    dones = [False for _ in range(environments.num_envs)]
+    while not all(finished):
+        actions, _, _, _ = model.step(observations)
+        for i, (obs, action, done) in enumerate(zip(observations, actions, dones)):
+            if not finished[i]:
+                trajectories[i].append((obs, action))
+            if done:
+                finished[i] = True
+
+        observations, _, dones, _ = environments.step(actions)
+
+    return trajectories
