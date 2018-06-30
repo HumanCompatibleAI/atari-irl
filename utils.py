@@ -65,7 +65,13 @@ class PPOInterfaceContext():
             env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
             return env
 
+        def do_nothing():
+            pass
+
         self.environments = DummyVecEnv([make_env for _ in range(n_envs)])
+        # Hacky monkey-patch so that we can work with rllab's environments
+        # we'll actually close the environment for real when we exit it later
+        self.environments.terminate = do_nothing
 
     def __enter__(self):
         self.tf_session_context.__enter__()
