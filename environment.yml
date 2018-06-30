@@ -6,44 +6,54 @@ dependencies:
   - alabaster=0.7.11
   - asn1crypto=0.24.0
   - babel=2.6.0
-  - ca-certificates=2018.03.07=0
+  - binutils_impl_linux-64=2.28.1
+  - binutils_linux-64=7.2.0
+  - ca-certificates=2018.03.07
   - certifi=2018.4.16
   - cffi=1.11.5
   - chardet=3.0.4
   - cryptography=2.2.2
-  - cudatoolkit=9.0=h13b8566_0
-  - cudnn=7.1.2=cuda9.0_0
-  - docutils=0.14=py36hb0f60f5_0
-  - idna=2.7=py36_0
-  - imagesize=1.0.0=py36_0
-  - intel-openmp=2018.0.3=0
+  - cudatoolkit=9.0
+  - cudnn=7.1.2
+  - docutils=0.14
+  - gcc_impl_linux-64=7.2.0
+  - gcc_linux-64=7.2.0
+  - gxx_impl_linux-64=7.2.0
+  - gxx_linux-64=7.2.0
+  - idna=2.7
+  - imagesize=1.0.0
+  - intel-openmp=2018.0.3
   - jinja2=2.10
-  - libedit=3.1.20170329=h6b74fdf_2
-  - libffi=3.2.1=hd88cf55_4
-  - libgcc-ng=7.2.0=hdf63c60_3
-  - libgfortran-ng=7.2.0=hdf63c60_3
-  - libstdcxx-ng=7.2.0=hdf63c60_3
+  - libedit=3.1.20170329
+  - libffi=3.2.1
+  - libgcc-ng=7.2.0
+  - libgfortran-ng=7.2.0
+  - libgpuarray=0.7.6
+  - libstdcxx-ng=7.2.0
+  - mako=1.0.7
   - markupsafe=1.0
-  - mkl=2018.0.3=1
+  - mkl=2018.0.3
+  - mkl-service=1.1.2
   - mkl_fft=1.0.1
   - mkl_random=1.0.1
-  - ncurses=6.1=hf484d3e_0
+  - ncurses=6.1
   - ninja=1.8.2
   - numpy=1.14.2
   - numpydoc=0.8.0
-  - openssl=1.0.2o=h20670df_0
+  - openssl=1.0.2o
   - packaging=17.1
   - pandas=0.23.0
   - pip=10.0.1
   - pycparser=2.18
   - pygments=2.2.0
+  - pygpu=0.7.6
   - pyopenssl=18.0.0
   - pyparsing=2.2.0
   - pysocks=1.6.8
-  - python=3.6.5=hc3d631a_2
+  - python=3.6.5
   - python-dateutil=2.7.3
   - pytz=2018.4
-  - readline=7.0=ha6073c6_4
+  - readline=7.0
   - requests=2.19.1
   - scipy=1.1.0
   - setuptools=39.2.0
@@ -52,28 +62,36 @@ dependencies:
   - sphinx=1.7.5
   - sphinxcontrib=1.0
   - sphinxcontrib-websupport=1.1.0
-  - sqlite=3.24.0=h84994c4_0
-  - tk=8.6.7=hc745277_3
+  - sqlite=3.24.0
+  - theano=1.0.2
+  - tk=8.6.7
   - urllib3=1.23
   - wheel=0.31.1
-  - xz=5.2.4=h14c3975_4
-  - zlib=1.2.11=ha838bed_2
-  - cuda90=1.0=h6433d27_0
+  - xz=5.2.4
+  - zlib=1.2.11
+  - cuda90=1.0
   - pytorch=0.4.0
   - pip:
     - absl-py==0.2.2
+    - adversarial-irl==0.1
     - astor==0.6.2
     - atari-py==0.1.1
+    - atomicwrites==1.1.5
+    - attrs==18.1.0
     - backcall==0.1.0
-    - git+git://github.com/AdamGleave/baselines.git@hotfixes#egg=baselines
+    - baselines==0.1.5
     - bleach==1.5.0
+    - cached-property==1.4.3
     - click==6.7
     - cloudpickle==0.5.3
+    - colorama==0.3.9
     - cycler==0.10.0
     - cython==0.28.3
     - decorator==4.3.0
     - dill==0.2.8.2
     - entrypoints==0.2.3
+    - flatbuffers==2015.12.22.1
+    - funcsigs==1.0.2
     - future==0.16.0
     - gast==0.2.0
     - glfw==1.6.0
@@ -81,14 +99,20 @@ dependencies:
     - gym==0.10.5
     - html5lib==0.9999999
     - imageio==2.3.0
+    - ipykernel==4.8.2
+    - ipython==6.4.0
+    - ipython-genutils==0.2.0
     - ipywidgets==7.2.1
     - jedi==0.12.0
     - joblib==0.12.0
     - jsonschema==2.6.0
+    - jupyter-client==5.2.3
+    - jupyter-core==4.4.0
     - kiwisolver==1.0.1
     - markdown==2.6.11
     - matplotlib==2.2.2
     - mistune==0.8.3
+    - more-itertools==4.2.0
     - mpi4py==3.0.0
     - mujoco-py==1.50.1.56
     - nbconvert==5.3.1
@@ -97,22 +121,33 @@ dependencies:
     - opencv-python==3.4.1.15
     - pandocfilters==1.4.2
     - parso==0.2.1
+    - path.py==11.0.1
     - pexpect==4.6.0
     - pickleshare==0.7.4
     - pillow==5.1.0
+    - pluggy==0.6.0
     - progressbar2==3.38.0
     - prompt-toolkit==1.0.15
     - protobuf==3.6.0
+    - psutil==5.4.6
     - ptyprocess==0.6.0
+    - py==1.5.4
     - pyglet==1.3.2
     - pyopengl==3.1.0
+    - pyprind==2.11.2
+    - pytest==3.6.2
     - python-utils==2.3.0
+    - pyyaml==3.12
     - pyzmq==17.0.0
     - qtconsole==4.3.1
+    - redis==2.10.6
+    - rllab==0.1.0
     - seaborn==0.8.1
     - send2trash==1.5.0
     - simplegeneric==0.8.1
     - tensorboard==1.8.0
+    - tensorflow==1.8.0
+    - tensorflow-gpu==1.8.0
     - termcolor==1.1.0
     - terminado==0.8.1
     - testpath==0.3.1
@@ -124,5 +159,5 @@ dependencies:
     - werkzeug==0.14.1
     - widgetsnbextension==3.2.1
     - zmq==0.0.0
-    - https://storage.googleapis.com/tensorflow/linux/gpu/tensorflow_gpu-1.8.0-cp36-cp36m-linux_x86_64.whl
+prefix: /home/aaron/anaconda3/envs/atari-irl
 
