@@ -3,7 +3,6 @@ import numpy as np
 from baselines import logger
 from baselines.common import explained_variance, set_global_seeds
 from baselines.ppo2.ppo2 import Runner, constfn, safemean
-from baselines.common.vec_env.vec_normalize import VecNormalize
 
 from policies import Policy, EnvPolicy
 
@@ -83,7 +82,7 @@ class Learner:
     def __init__(self, policy_class, env, total_timesteps, seed, nsteps=2048,
                  ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
                  gamma=0.99, lam=0.95, nminibatches=4, noptepochs=4,
-                 cliprange=0.2, normalize_env=True):
+                 cliprange=0.2, save_env=True):
         # Set the random seed
         set_global_seeds(seed)
 
@@ -113,8 +112,7 @@ class Learner:
             nbatch_train=nbatch_train, nsteps=nsteps, ent_coef=ent_coef,
             vf_coef=vf_coef, max_grad_norm=max_grad_norm
         )
-        if normalize_env:
-            env = VecNormalize(env)
+        if save_env:
             policy = EnvPolicy(model_args=model_args, envs=env)
         else:
             policy = Policy(model_args)

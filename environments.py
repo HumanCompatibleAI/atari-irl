@@ -2,6 +2,12 @@ import pickle
 import numpy as np
 from rllab.envs.base import Env
 from rllab.envs.gym_env import convert_gym_space
+from baselines.common.vec_env.vec_normalize import VecNormalize
+
+def vec_normalize(env):
+    return VecNormalize(env)
+
+mujoco_modifiers = [vec_normalize]
 
 class ConstantStatistics(object):
     def __init__(self, running_mean):
