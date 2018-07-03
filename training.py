@@ -1,10 +1,11 @@
 import numpy as np
+import tensorflow as tf
 
 from baselines import logger
 from baselines.common import explained_variance, set_global_seeds
 from baselines.ppo2.ppo2 import Runner, constfn, safemean
 
-from policies import Policy, EnvPolicy
+import policies
 
 from collections import deque, namedtuple
 import time
@@ -78,11 +79,30 @@ def print_log(
     logger.dumpkvs()
 
 
+def setup_policy(*, model_args, nenvs, ob_space, ac_space, env, save_env, checkpoint):
+    if checkpoint:
+        policy = policies.restore_policy_from_checkpoint_dir(
+            checkpoint_dir=checkpoint, envs=env
+        )
+        assert policy.model_args == policy.model_args
+        if isinstance(policy, policies.EnvPolicy):
+            assert nenvs == policy.envs.num_envs
+            assert ob_space == policy.envs.observation_space
+            assert ac_space == policy.envs.action_space
+            env = policy.envs
+    else:
+        if save_env:
+            policy = policies.EnvPolicy(model_args=model_args, envs=env)
+        else:
+            policy = policies.Policy(model_args)
+    return policy
+
+
 class Learner:
     def __init__(self, policy_class, env, total_timesteps, seed, nsteps=2048,
                  ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
                  gamma=0.99, lam=0.95, nminibatches=4, noptepochs=4,
-                 cliprange=0.2, save_env=True):
+                 cliprange=0.2, checkpoint=None, save_env=True):
         # Set the random seed
         set_global_seeds(seed)
 
@@ -112,10 +132,11 @@ class Learner:
             nbatch_train=nbatch_train, nsteps=nsteps, ent_coef=ent_coef,
             vf_coef=vf_coef, max_grad_norm=max_grad_norm
         )
-        if save_env:
-            policy = EnvPolicy(model_args=model_args, envs=env)
-        else:
-            policy = Policy(model_args)
+
+        policy = setup_policy(
+            model_args=model_args, env=env, nenvs=nenvs, checkpoint=checkpoint,
+            ob_space=ob_space, ac_space=ac_space, save_env=save_env
+        )
 
         model = policy.model
         runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
@@ -133,7 +154,7 @@ class Learner:
 
         # Initialize the objects that will change as we learn
         self._update = 1
-        self._epinfobuf = deque(maxlen=100)
+        self._epinfobuf = deque(maxlen=1000)
         self._tfirststart = None
         self._run_info = None
         self._tnow = None

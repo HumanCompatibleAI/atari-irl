@@ -91,6 +91,14 @@ class EnvPolicy(Policy):
         return policy
 
 
+def restore_policy_from_checkpoint_dir(checkpoint_dir, envs=None):
+    if EnvPolicy.env_params_fname in os.listdir(checkpoint_dir):
+        assert envs is not None
+        return EnvPolicy.load(checkpoint_dir, envs)
+    else:
+        return Policy.load(checkpoint_dir)
+
+
 def run_policy(*, model, environments, render=True):
     # Initialize the stuff we want to keep track of
     rewards = []
