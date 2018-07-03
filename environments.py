@@ -3,11 +3,44 @@ import numpy as np
 from rllab.envs.base import Env
 from rllab.envs.gym_env import convert_gym_space
 from baselines.common.vec_env.vec_normalize import VecNormalize
+from baselines.common.vec_env.vec_frame_stack import VecFrameStack
+from baselines.common.atari_wrappers import NoopResetEnv, MaxAndSkipEnv, wrap_deepmind
 
 def vec_normalize(env):
     return VecNormalize(env)
 
-mujoco_modifiers = [vec_normalize]
+mujoco_modifiers = {
+    'env_modifiers': [],
+    'vec_env_modifiers': [vec_normalize]
+}
+
+# from baselines.common.cmd_util.make_atari_env
+def wrap_env_with_args(Wrapper, **kwargs):
+    return lambda env: Wrapper(env, **kwargs)
+
+def noop_reset(noop_max):
+    def _thunk(env):
+        assert 'NoFrameskip' in env.spec.id
+        return NoopResetEnv(env, noop_max=noop_max)
+    return _thunk
+
+def atari_setup(env):
+    # from baselines.common.atari_wrappers
+    assert 'NoFrameskip' in env.spec.id
+    env = NoopResetEnv(env, noop_max=30)
+    env = MaxAndSkipEnv(env, skip=4)
+    return env
+
+atari_modifiers = {
+    'env_modifiers': [
+        wrap_env_with_args(NoopResetEnv, noop_max=30),
+        wrap_env_with_args(MaxAndSkipEnv, skip=4),
+        wrap_deepmind
+    ],
+    'vec_env_modifiers': [
+        wrap_env_with_args(VecFrameStack, nstack=4)
+    ]
+}
 
 class ConstantStatistics(object):
     def __init__(self, running_mean):

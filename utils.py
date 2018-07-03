@@ -20,6 +20,7 @@ This is heavily based on
 import tensorflow as tf
 from baselines import bench, logger
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 import gym
 
 
@@ -43,11 +44,11 @@ class TfContext:
             allow_soft_placement=True,
             intra_op_parallelism_threads=ncpu,
             inter_op_parallelism_threads=ncpu,
-            device_count={'GPU': 2},
-            log_device_placement=True
+            device_count={'GPU': 1},
+            log_device_placement=True,
         )
+        config.gpu_options.allow_growth=True
         self.tf_session = tf.Session(config=config)
-
     def __enter__(self):
         self.tf_session.__enter__()
         return self
@@ -58,23 +59,32 @@ class TfContext:
 
 
 class EnvironmentContext:
-    def __init__(self, env_name, n_envs=1, env_modifiers=list()):
+    def __init__(self, env_name, base_seed=42, n_envs=1, env_modifiers=list(), vec_env_modifiers=list()):
         self.env_name = env_name
         self.n_envs = n_envs
         self.env_modifiers = env_modifiers
+        self.vec_env_modifiers = vec_env_modifiers
+        self.base_seed = base_seed
 
     def __enter__(self):
-        def make_env():
-            env = gym.make(self.env_name)
-            return bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
+        def make_env(i):
+            def _thunk():
+                env = gym.make(self.env_name)
+                env.seed(self.base_seed + i)
+                env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
+                for fn in self.env_modifiers:
+                    env = fn(env)
+                return env
+            return _thunk
 
         def do_nothing():
             pass
 
-        self.base_vec_env = DummyVecEnv([make_env for _ in range(self.n_envs)])
+        self.base_vec_env = SubprocVecEnv([make_env(i) for i in range(self.n_envs)])
         self.environments = self.base_vec_env
-        for fn in self.env_modifiers:
+        for fn in self.vec_env_modifiers:
             self.environments = fn(self.environments)
+
         # Hacky monkey-patch so that we can work with rllab's environments
         # we'll actually close the environment for real when we exit it later
         #self.environments.terminate = do_nothing
@@ -82,4 +92,6 @@ class EnvironmentContext:
         return self
 
     def __exit__(self, *args):
-        [monitor.unwrapped.close() for monitor in self.base_vec_env.unwrapped.envs]
+        self.base_vec_env.close()
+        #[monitor.unwrapped.close() for monitor in self.base_vec_env.unwrapped.envs]
+        pass
