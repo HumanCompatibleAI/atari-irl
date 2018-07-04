@@ -78,22 +78,13 @@ class EnvironmentContext:
                 return env
             return _thunk
 
-        def do_nothing():
-            pass
-
         set_global_seeds(self.seed)
         self.base_vec_env = SubprocVecEnv([make_env(i + self.seed) for i in range(self.n_envs)])
         self.environments = self.base_vec_env
         for fn in self.vec_env_modifiers:
             self.environments = fn(self.environments)
 
-        # Hacky monkey-patch so that we can work with rllab's environments
-        # we'll actually close the environment for real when we exit it later
-        #self.environments.terminate = do_nothing
-
         return self
 
     def __exit__(self, *args):
         self.base_vec_env.close()
-        #[monitor.unwrapped.close() for monitor in self.base_vec_env.unwrapped.envs]
-        pass
