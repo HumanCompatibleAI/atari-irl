@@ -1,11 +1,10 @@
 import numpy as np
-import tensorflow as tf
 
 from baselines import logger
 from baselines.common import explained_variance, set_global_seeds
 from baselines.ppo2.ppo2 import Runner, constfn, safemean
 
-import policies
+from . import policies
 
 from collections import deque, namedtuple
 import time

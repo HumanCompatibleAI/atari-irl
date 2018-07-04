@@ -1,6 +1,6 @@
 import numpy as np
 from baselines.ppo2.ppo2 import Model
-import environments
+from . import environments
 import os
 import os.path as osp
 import joblib
