@@ -99,12 +99,13 @@ def setup_policy(*, model_args, nenvs, ob_space, ac_space, env, save_env, checkp
 
 
 class Learner:
-    def __init__(self, policy_class, env, total_timesteps, seed, nsteps=2048,
+    def __init__(self, policy_class, env, *, total_timesteps, nsteps=2048,
                  ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
                  gamma=0.99, lam=0.95, nminibatches=4, noptepochs=4,
                  cliprange=0.2, checkpoint=None, save_env=True):
-        # Set the random seed
-        set_global_seeds(seed)
+        # The random seed should already be set before running this
+
+        print(locals())
 
         # Deal with constant arguments
         if isinstance(lr, float): lr = constfn(lr)
