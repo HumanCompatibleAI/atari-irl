@@ -154,7 +154,7 @@ class Learner:
 
         # Initialize the objects that will change as we learn
         self._update = 1
-        self._epinfobuf = deque(maxlen=1000)
+        self._epinfobuf = deque(maxlen=100)
         self._tfirststart = None
         self._run_info = None
         self._tnow = None

@@ -21,6 +21,7 @@ import tensorflow as tf
 from baselines import bench, logger
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+from baselines.common import set_global_seeds
 import gym
 
 
@@ -59,18 +60,18 @@ class TfContext:
 
 
 class EnvironmentContext:
-    def __init__(self, env_name, base_seed=42, n_envs=1, env_modifiers=list(), vec_env_modifiers=list()):
+    def __init__(self, env_name, seed, n_envs=1, env_modifiers=list(), vec_env_modifiers=list()):
         self.env_name = env_name
         self.n_envs = n_envs
         self.env_modifiers = env_modifiers
         self.vec_env_modifiers = vec_env_modifiers
-        self.base_seed = base_seed
+        self.seed = seed
 
     def __enter__(self):
         def make_env(i):
             def _thunk():
                 env = gym.make(self.env_name)
-                env.seed(self.base_seed + i)
+                env.seed(i)
                 env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
                 for fn in self.env_modifiers:
                     env = fn(env)
@@ -80,7 +81,8 @@ class EnvironmentContext:
         def do_nothing():
             pass
 
-        self.base_vec_env = SubprocVecEnv([make_env(i) for i in range(self.n_envs)])
+        set_global_seeds(self.seed)
+        self.base_vec_env = SubprocVecEnv([make_env(i + self.seed) for i in range(self.n_envs)])
         self.environments = self.base_vec_env
         for fn in self.vec_env_modifiers:
             self.environments = fn(self.environments)
