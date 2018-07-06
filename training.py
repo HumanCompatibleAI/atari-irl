@@ -1,10 +1,10 @@
 import numpy as np
 
 from baselines import logger
-from baselines.common import explained_variance, set_global_seeds
+from baselines.common import explained_variance
 from baselines.ppo2.ppo2 import Runner, constfn, safemean
 
-from . import policies
+import policies
 
 from collections import deque, namedtuple
 import time

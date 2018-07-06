@@ -93,3 +93,25 @@ class EnvironmentContext:
 
     def __exit__(self, *args):
         self.base_vec_env.close()
+
+
+def read_cols_from_dict(dirname, *cols):
+    ans = dict([(c, []) for c in cols])
+    with open(dirname + '/progress.csv', 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            for c in cols:
+                ans[c].append(float(row[c]))
+    return (ans[c] for c in cols)
+
+
+def plot_from_dirname(dirname):
+    plt.plot(*read_cols_from_dict(dirname,'total_timesteps', 'eprewmean'))
+
+
+def one_hot(x, dim):
+    assert isinstance(x, list) or len(x.shape) == 1
+    ans = np.zeros((len(x), dim))
+    for n, i in enumerate(x):
+        ans[n, i] = 1
+    return ans
