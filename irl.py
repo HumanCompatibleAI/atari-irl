@@ -60,11 +60,12 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
             self.scope = scope
 
+        self.probs = tf.nn.softmax(self.act_model.pd.logits)
         obs_var = self.act_model.X
         #dist_info_sym = self.dist_info_sym(None, None)
         self._f_dist = tensor_utils.compile_function(
             inputs=[obs_var],
-            outputs=self.act_model.pi
+            outputs=self.probs
         )
 
         StochasticPolicy.__init__(self, env_spec)
@@ -75,7 +76,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         return True
 
     def dist_info_sym(self, obs_var, state_info_vars=None):
-        return dict(prob=self.act_model.pi)
+        return dict(prob=self.probs)
 
     @overrides
     def get_action(self, observation):
