@@ -18,11 +18,16 @@ This is heavily based on
 """
 
 import tensorflow as tf
+import numpy as np
+
 from baselines import bench, logger
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common import set_global_seeds
+
 import gym
+import csv
+import matplotlib.pyplot as plt
 
 
 def optional_teardown(context, teardown_on_context_exit=True):
