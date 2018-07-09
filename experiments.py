@@ -2,10 +2,14 @@ import utils
 import environments
 import training
 import policies
+import irl
 from baselines.ppo2.policies import MlpPolicy, CnnPolicy
 import os.path as osp
 import os
 import argparse
+import tensorflow as tf
+import pickle
+from baselines import logger
 
 
 def atari_arg_parser():
@@ -54,6 +58,62 @@ def train_expert(args):
                 )
 
             policies.run_policy(model=policy.model, environments=policy.envs)
+
+
+def train_airl(args):
+    env_name = 'PongNoFrameskip-v0'
+    savepath = 'experts/pong/pong-noskip-21/checkpoints/update-7640'
+
+    if args.generate_trajectories:
+        with tf.device('/gpu:1'):
+            with utils.TfContext():
+                with utils.EnvironmentContext(
+                        env_name=env_name,
+                        n_envs=8,
+                        seed=21,
+                        **environments.atari_modifiers
+                ) as context:
+                    policy = policies.EnvPolicy.load(savepath, context.environments)
+                    policies.run_policy(model=policy.model, environments=policy.envs)
+                    ts = policies.sample_trajectories(
+                        model=policy.model,
+                        environments=policy.envs,
+                        n_trajectories=8,
+                        one_hot_code=True
+                    )
+
+        pickle.dump(ts, open(args.trajectories_file, 'wb'))
+    else:
+        ts = pickle.load(open(args.trajectories_file, 'rb'))
+
+
+    tf_cfg = tf.ConfigProto(
+        allow_soft_placement=True,
+        intra_op_parallelism_threads=args.ncpu,
+        inter_op_parallelism_threads=args.ncpu,
+        device_count={'GPU': 1},
+        log_device_placement=True
+    )
+
+    from tensorflow.python import debug as tf_debug
+
+    with utils.EnvironmentContext(
+            env_name=env_name,
+            n_envs=1,
+            seed=76,
+            **environments.one_hot_atari_modifiers
+    ) as context:
+        logger.configure()
+        reward, policy_params = irl.airl(
+            context.environments, ts, .99, 90238, logger.get_dir(),
+            tf_cfg=tf_cfg,
+            training_cfg={'n_itr': 500}
+        )
+
+        import pickle
+        pickle.dump(policy_params, open('policy500.pkl', 'wb'))
+        # policy.step = lambda obs: (policy.get_actions(obs)[0], None, None, None)
+        # policies.run_policy(model=policy, environments=context.environments)
 
 if __name__ == '__main__':
     parser = atari_arg_parser()
