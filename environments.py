@@ -74,12 +74,14 @@ atari_modifiers = {
     ]
 }
 
+
 one_hot_atari_modifiers = {
     'env_modifiers': atari_modifiers['env_modifiers'] + [
         wrap_env_with_args(OneHotDecodingEnv)
     ],
     'vec_env_modifiers': atari_modifiers['vec_env_modifiers']
 }
+
 
 class ConstantStatistics(object):
     def __init__(self, running_mean):

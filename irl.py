@@ -36,6 +36,7 @@ from sandbox.rocky.tf.misc import tensor_utils
 
 from tensorflow.python import debug as tf_debug
 
+
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     def __init__(
             self,
@@ -115,6 +116,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         return self._dist
 
 from tensorflow.python import debug as tf_debug
+
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
