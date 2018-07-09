@@ -1,6 +1,6 @@
 import numpy as np
 from baselines.ppo2.ppo2 import Model
-import environments
+from . import environments
 import os
 import os.path as osp
 import joblib
@@ -89,6 +89,14 @@ class EnvPolicy(Policy):
         policy.envs = environments.restore_serialized_env_wrapper(env_params, envs)
         environments.make_const(policy.envs)
         return policy
+
+
+def restore_policy_from_checkpoint_dir(checkpoint_dir, envs=None):
+    if EnvPolicy.env_params_fname in os.listdir(checkpoint_dir):
+        assert envs is not None
+        return EnvPolicy.load(checkpoint_dir, envs)
+    else:
+        return Policy.load(checkpoint_dir)
 
 
 def run_policy(*, model, environments, render=True):

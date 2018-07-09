@@ -2,6 +2,48 @@ import pickle
 import numpy as np
 from rllab.envs.base import Env
 from rllab.envs.gym_env import convert_gym_space
+from baselines.common.vec_env.vec_normalize import VecNormalize
+from baselines.common.vec_env.vec_frame_stack import VecFrameStack
+from baselines.common.atari_wrappers import NoopResetEnv, MaxAndSkipEnv, wrap_deepmind
+from gym.spaces.discrete import Discrete
+from sandbox.rocky.tf.spaces import Box
+import gym
+
+def vec_normalize(env):
+    return VecNormalize(env)
+
+mujoco_modifiers = {
+    'env_modifiers': [],
+    'vec_env_modifiers': [vec_normalize]
+}
+
+# from baselines.common.cmd_util.make_atari_env
+def wrap_env_with_args(Wrapper, **kwargs):
+    return lambda env: Wrapper(env, **kwargs)
+
+def noop_reset(noop_max):
+    def _thunk(env):
+        assert 'NoFrameskip' in env.spec.id
+        return NoopResetEnv(env, noop_max=noop_max)
+    return _thunk
+
+def atari_setup(env):
+    # from baselines.common.atari_wrappers
+    assert 'NoFrameskip' in env.spec.id
+    env = NoopResetEnv(env, noop_max=30)
+    env = MaxAndSkipEnv(env, skip=4)
+    return env
+
+atari_modifiers = {
+    'env_modifiers': [
+        wrap_env_with_args(NoopResetEnv, noop_max=30),
+        wrap_env_with_args(MaxAndSkipEnv, skip=4),
+        wrap_deepmind
+    ],
+    'vec_env_modifiers': [
+        wrap_env_with_args(VecFrameStack, nstack=4)
+    ]
+}
 
 class ConstantStatistics(object):
     def __init__(self, running_mean):
@@ -40,6 +82,10 @@ def make_const(norm):
             setattr(norm, k, ConstantStatistics(v))
 
 
+def wrap_action_space(action_space):
+    return Box(0, 1, shape=action_space.n)
+
+
 # Copied from https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 # this hacks around airl being built on top of rllib, and not using gym
 # environments
@@ -55,7 +101,10 @@ class VecGymEnv(Env):
 
     @property
     def action_space(self):
-        return self._action_space
+        if isinstance(self._action_space, Box):
+            return self._action_space
+        else:
+            return wrap_action_space(self._action_space)
 
     def terminate(self):
         # Normally we'd close environments, but pirl.experiments handles this.
