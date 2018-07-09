@@ -76,9 +76,9 @@ class EnvironmentContext:
             def _thunk():
                 env = gym.make(self.env_name)
                 env.seed(i)
-                env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
                 for fn in self.env_modifiers:
                     env = fn(env)
+                env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
                 return env
             return _thunk
 
