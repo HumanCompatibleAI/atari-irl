@@ -115,6 +115,26 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     def distribution(self):
         return self._dist
 
+    def get_param_values(self):
+        return self.act_model.sess.run(self.get_params())
+
+    def restore_param_values(self, fname):
+        params = pickle.load(open(fname, 'rb'))
+        param_tensors = self.get_params()
+        restores = []
+        for tf_tensor, np_array in zip(param_tensors, params):
+            restores.append(tf_tensor.assign(np_array))
+        tf.get_default_session().run(restores)
+
+    def show_run_in_gym_env(self, venv):
+        dones = False
+        obs = venv.reset()
+
+        while not any(dones):
+            actions, _, = self.get_actions(obs)
+            obs, _, dones, _ = venv.step(actions)
+            venv.reender()
+
 from tensorflow.python import debug as tf_debug
 
 
