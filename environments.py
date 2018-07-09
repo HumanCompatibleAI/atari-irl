@@ -67,7 +67,7 @@ atari_modifiers = {
         wrap_env_with_args(NoopResetEnv, noop_max=30),
         wrap_env_with_args(MaxAndSkipEnv, skip=4),
         wrap_deepmind,
-        wrap_env_with_args(TimeLimitEnv)
+       #wrap_env_with_args(TimeLimitEnv)
     ],
     'vec_env_modifiers': [
         wrap_env_with_args(VecFrameStack, nstack=4)
@@ -155,3 +155,7 @@ class VecGymEnv(Env):
         # We're powerless as the environments have already been created.
         # But I'm not too bothered by this, as we can tweak them elsewhere.
         return self.venv
+
+    def reset(self, **kwargs):
+        print("Reset")
+        self.venv.reset(**kwargs)

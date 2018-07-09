@@ -51,7 +51,6 @@ class TfContext:
             intra_op_parallelism_threads=ncpu,
             inter_op_parallelism_threads=ncpu,
             device_count={'GPU': 1},
-            log_device_placement=True,
         )
         config.gpu_options.allow_growth=True
         self.tf_session = tf.Session(config=config)

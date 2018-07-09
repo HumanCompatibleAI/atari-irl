@@ -13,6 +13,7 @@ from sandbox.rocky.tf.core.layers_powered import LayersPowered
 import sandbox.rocky.tf.core.layers as L
 from sandbox.rocky.tf.distributions.categorical import Categorical
 from sandbox.rocky.tf.spaces.box import Box
+from sandbox.rocky.tf.samplers.batch_sampler import BatchSampler
 from rllab.misc.overrides import overrides
 
 from airl.algos.irl_trpo import IRLTRPO
@@ -33,11 +34,12 @@ from policies import EnvPolicy
 from sandbox.rocky.tf.misc import tensor_utils
 
 
+from tensorflow.python import debug as tf_debug
+
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     def __init__(
             self,
             name,
-            env_spec,
             *,
             policy_model,
             envs,
@@ -68,7 +70,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             outputs=self.probs
         )
 
-        StochasticPolicy.__init__(self, env_spec)
+        StochasticPolicy.__init__(self, envs.spec)
         self.name = name
 
     @property
@@ -102,12 +104,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         :return:
         """
         raise NotImplemented
-        new_dist_info_vars = self.dist_info_sym(obs_var, action_var)
-        new_mean_var, new_log_std_var = new_dist_info_vars["mean"], new_dist_info_vars["log_std"]
-        old_mean_var, old_log_std_var = old_dist_info_vars["mean"], old_dist_info_vars["log_std"]
-        epsilon_var = (action_var - old_mean_var) / (tf.exp(old_log_std_var) + 1e-8)
-        new_action_var = new_mean_var + epsilon_var * tf.exp(new_log_std_var)
-        return new_action_var
 
     def log_diagnostics(self, paths):
         pass
@@ -118,6 +114,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     def distribution(self):
         return self._dist
 
+from tensorflow.python import debug as tf_debug
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
@@ -127,7 +124,9 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
     experts = trajectories
     train_graph = tf.Graph()
     with train_graph.as_default():
-        with tf.Session(config=tf_cfg) as sess:
+        sess = tf.Session(config=tf_cfg)
+        #sess = tf_debug.LocalCLIDebugWrapperSession(sess , ui_type='readline')
+        with sess.as_default():
             tf.set_random_seed(seed)
             if model_cfg is None:
                 model_cfg = {'model': AIRLStateOnly, 'state_only': True,
@@ -144,11 +143,11 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                                   **model_kwargs)
 
             policy_fn = policy_cfg.pop('policy')
-            policy = policy_fn(name='policy', env_spec=envs.spec, **policy_cfg)
+            policy = policy_fn(name='policy', **policy_cfg)
 
             training_kwargs = {
                 'n_itr': 1000,
-                'batch_size': 500,
+                'batch_size': 1000,
                 'max_path_length': 500,
                 'irl_model_wt': 1.0,
                 'entropy_weight': 0.1,
@@ -163,7 +162,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 discount=discount,
                 sampler_args=dict(n_envs=venv.num_envs),
                 zero_environment_reward=True,
-                baseline=ZeroBaseline(env_spec=envs.spec),#LinearFeatureBaseline(env_spec=envs.spec),
+                baseline=ZeroBaseline(env_spec=envs.spec),
                 **training_kwargs
             )
 
@@ -172,12 +171,9 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
 
                 reward_params = irl_model.get_params()
 
-                # Side-effect: forces policy to cache all parameters.
-                # This ensures they are saved/restored during pickling.
-                policy.get_params()
                 # Must pickle policy rather than returning it directly,
                 # since parameters in policy will not survive across tf sessions.
-                policy_pkl = pickle.dumps(policy)
+                policy_params = sess.run(policy.get_params())
 
     reward = model_cfg, reward_params
-    return reward, None#, policy_pkl
+    return reward, policy_params
