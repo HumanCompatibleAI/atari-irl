@@ -135,6 +135,14 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             obs, _, dones, _ = venv.step(actions)
             venv.render()
 
+def policy_config(args, envs, sess):
+    return {
+        'policy': DiscreteIRLPolicy,
+        'policy_model': CnnPolicy,
+        'envs': envs,
+        'sess': sess
+    }
+
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
          tf_cfg, model_cfg=None, policy_cfg=None, training_cfg={}):
@@ -152,10 +160,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 model_cfg = {'model': AIRLStateOnly, 'state_only': True,
                              'max_itrs': 10}
             if policy_cfg is None:
-                policy_cfg = {'policy': DiscreteIRLPolicy,
-                              'policy_model': CnnPolicy,
-                              'envs': envs,
-                              'sess': sess}
+                policy_cfg = policy_cfg(None, envs, sess)
 
             model_kwargs = dict(model_cfg)
             model_cls = model_kwargs.pop('model')
