@@ -1,6 +1,7 @@
 import numpy as np
 from baselines.ppo2.ppo2 import Model
-from . import environments
+import environments
+from utils import one_hot
 import os
 import os.path as osp
 import joblib
@@ -119,7 +120,7 @@ def run_policy(*, model, environments, render=True):
     return sum(rewards[:])
 
 
-def sample_trajectories(*, model, environments, n_trajectories=10):
+def sample_trajectories(*, model, environments, one_hot_code=False, n_trajectories=10):
     # vectorized environments reset after done
     # pirl format: [
     #    (observations, actions), <- single trajectory same length for both
@@ -153,8 +154,9 @@ def sample_trajectories(*, model, environments, n_trajectories=10):
         for i, done in enumerate(dones):
             if done:
                 completed_trajectories.append({
-                    'observations': np.vstack(observations[i]),
-                    'actions': np.vstack(actions[i])
+                    'observations': np.array(observations[i]),
+                    # TODO(Aaron): get the real dim
+                    'actions': one_hot(actions[i], 6) if one_hot_code else np.vstack(actions[i])
                 })
                 observations[i] = []
                 actions[i] = []

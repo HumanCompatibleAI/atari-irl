@@ -34,15 +34,51 @@ def atari_setup(env):
     env = MaxAndSkipEnv(env, skip=4)
     return env
 
+
+class OneHotDecodingEnv(gym.Wrapper):
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
+
+    def step(self, one_hot_actions):
+        return self.env.step(np.argmax(one_hot_actions, axis=0))
+
+
+class TimeLimitEnv(gym.Wrapper):
+    def __init__(self, env, time_limit=500):
+        gym.Wrapper.__init__(self, env)
+        self.steps = 0
+        self.time_limit = time_limit
+
+    def reset(self, **kwargs):
+        self.steps = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, actions):
+        f1, f2, done, f3 = self.env.step(actions)
+        self.steps += 1
+        if self.steps > self.time_limit:
+            done = True
+
+        return f1, f2, done, f3
+
+
 atari_modifiers = {
     'env_modifiers': [
         wrap_env_with_args(NoopResetEnv, noop_max=30),
         wrap_env_with_args(MaxAndSkipEnv, skip=4),
-        wrap_deepmind
+        wrap_deepmind,
+        wrap_env_with_args(TimeLimitEnv)
     ],
     'vec_env_modifiers': [
         wrap_env_with_args(VecFrameStack, nstack=4)
     ]
+}
+
+one_hot_atari_modifiers = {
+    'env_modifiers': atari_modifiers['env_modifiers'] + [
+        wrap_env_with_args(OneHotDecodingEnv)
+    ],
+    'vec_env_modifiers': atari_modifiers['vec_env_modifiers']
 }
 
 class ConstantStatistics(object):
