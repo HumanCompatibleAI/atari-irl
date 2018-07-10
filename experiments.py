@@ -8,20 +8,41 @@ import os.path as osp
 import os
 import argparse
 import tensorflow as tf
-import pickle
 from baselines import logger
 from sandbox.rocky.tf.envs.base import TfEnv
+import pickle
 
-
-def atari_arg_parser():
+def atari_arg_parser(parser=None):
     # see baselines.common.cmd_util
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    if not parser:
+        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--env', help='environment ID', default='PongNoFrameskip-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num_timesteps', type=int, default=int(10e6))
-
     parser.add_argument('--num_envs', type=int, default=8)
     return parser
+
+def add_trajectory_args(parser):
+    parser.add_argument('--num_trajectories', help='number of trajectories', type=int, default=8)
+    parser.add_argument(
+        '--one_hot_code',
+        help='Whether or not to one hot code the actions',
+        type=bool, default=True
+    )
+    parser.add_argument(
+        '--trajectories_file',
+        help='file to write the trajectories to',
+        default='trajectories.pkl'
+    )
+
+def add_irl_args(parser):
+    parser.add_argument('--n_cpu', help='Number of CPUs', default=8)
+    parser.add_argument('--irl_seed', help='seed for the IRL tensorflow session', default=0)
+    parser.add_argument(
+        '--irl_policy_file',
+        help='filename for the IRL policy',
+        default='irl_policy_params.pkl'
+    )
 
 
 def train_expert(args):
@@ -65,8 +86,8 @@ def generate_trajectories(args):
     with utils.TfContext():
         with utils.EnvironmentContext(
                 env_name=args.env,
-                n_envs=8,
-                seed=21,
+                n_envs=args.num_envs,
+                seed=args.seed,
                 **environments.atari_modifiers
         ) as context:
             policy = policies.EnvPolicy.load(args.expert_path, context.environments)
@@ -74,8 +95,8 @@ def generate_trajectories(args):
             ts = policies.sample_trajectories(
                 model=policy.model,
                 environments=policy.envs,
-                n_trajectories=8,
-                one_hot_code=True
+                n_trajectories=args.num_trajectories,
+                one_hot_code=args.one_hot_code
             )
 
     pickle.dump(ts, open(args.trajectories_file, 'wb'))
@@ -92,11 +113,14 @@ def train_airl(args):
 
     ts = pickle.load(open(args.trajectories_file, 'rb'))
 
+    env_config = environments.one_hot_atari_modifiers
+    if not args.one_hot_code:
+        env_config = environments.atari_modifiers
     with utils.EnvironmentContext(
             env_name=args.env,
             n_envs=args.num_envs,
             seed=args.env_seed,
-            **environments.one_hot_atari_modifiers
+            **env_config
     ) as context:
         logger.configure()
         reward, policy_params = irl.airl(
@@ -107,17 +131,15 @@ def train_airl(args):
         )
 
         import pickle
-        pickle.dump(policy_params, open(args.irl_policy_fname, 'wb'))
-        # policy.step = lambda obs: (policy.get_actions(obs)[0], None, None, None)
-        # policies.run_policy(model=policy, environments=context.environments)
+        pickle.dump(policy_params, open(args.irl_policy_file, 'wb'))
 
 
 def run_irl(args):
     with utils.TfContext():
         with utils.EnvironmentContext(
                 env_name=args.env,
-                n_envs=8,
-                seed=21,
+                n_envs=args.num_env,
+                seed=args.seed,
                 **environments.atari_modifiers
         ) as context:
             envs = environments.VecGymEnv(context.environments)
@@ -128,7 +150,7 @@ def run_irl(args):
                 envs=envs,
                 sess=tf.get_default_session()
             )
-            policy.restore_param_values(args.irl_policy_fname)
+            policy.restore_param_values(args.irl_policy_file)
             policy.show_run_in_gym_env(context.environments)
 
 
