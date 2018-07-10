@@ -63,16 +63,17 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
             self.scope = scope
 
+        StochasticPolicy.__init__(self, envs.spec)
+        self.name = name
+
         self.probs = tf.nn.softmax(self.act_model.pd.logits)
         obs_var = self.act_model.X
-        #dist_info_sym = self.dist_info_sym(None, None)
+
+        self.get_param_data = lambda self: sess.run(self.get_params())
         self._f_dist = tensor_utils.compile_function(
             inputs=[obs_var],
             outputs=self.probs
         )
-
-        StochasticPolicy.__init__(self, envs.spec)
-        self.name = name
 
     @property
     def vectorized(self):
@@ -114,9 +115,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     @property
     def distribution(self):
         return self._dist
-
-    def get_param_values(self):
-        return self.act_model.sess.run(self.get_params())
 
     def restore_param_values(self, fname):
         params = pickle.load(open(fname, 'rb'))
@@ -170,7 +168,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 model_cfg = {'model': AIRLStateOnly, 'state_only': True,
                              'max_itrs': 10}
             if policy_cfg is None:
-                policy_cfg = policy_cfg(None)
+                policy_cfg = policy_config(None)
 
             model_kwargs = dict(model_cfg)
             model_cls = model_kwargs.pop('model')
@@ -207,7 +205,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
 
                 # Must pickle policy rather than returning it directly,
                 # since parameters in policy will not survive across tf sessions.
-                policy_params = sess.run(policy.get_params())
+                policy_params = sess.run(policy.get_param_data())
 
     reward = model_cfg, reward_params
     return reward, policy_params

@@ -8,6 +8,7 @@ from baselines import logger
 from sandbox.rocky.tf.envs.base import TfEnv
 import pickle
 
+
 def atari_arg_parser(parser=None):
     # see baselines.common.cmd_util
     if not parser:
@@ -17,6 +18,7 @@ def atari_arg_parser(parser=None):
     parser.add_argument('--num_timesteps', type=int, default=int(10e6))
     parser.add_argument('--num_envs', type=int, default=8)
     return parser
+
 
 def add_trajectory_args(parser):
     parser.add_argument('--num_trajectories', help='number of trajectories', type=int, default=8)
@@ -30,6 +32,7 @@ def add_trajectory_args(parser):
         help='file to write the trajectories to',
         default='trajectories.pkl'
     )
+
 
 def add_irl_args(parser):
     parser.add_argument('--n_cpu', help='Number of CPUs', default=8)
