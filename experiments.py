@@ -61,22 +61,21 @@ def train_expert(args):
 
 
 def generate_trajectories(args):
-    with tf.device('/gpu:1'):
-        with utils.TfContext():
-            with utils.EnvironmentContext(
-                    env_name=env_name,
-                    n_envs=8,
-                    seed=21,
-                    **environments.atari_modifiers
-            ) as context:
-                policy = policies.EnvPolicy.load(args.expert_path, context.environments)
-                policies.run_policy(model=policy.model, environments=policy.envs)
-                ts = policies.sample_trajectories(
-                    model=policy.model,
-                    environments=policy.envs,
-                    n_trajectories=8,
-                    one_hot_code=True
-                )
+    with utils.TfContext():
+        with utils.EnvironmentContext(
+                env_name=args.env,
+                n_envs=8,
+                seed=21,
+                **environments.atari_modifiers
+        ) as context:
+            policy = policies.EnvPolicy.load(args.expert_path, context.environments)
+            policies.run_policy(model=policy.model, environments=policy.envs)
+            ts = policies.sample_trajectories(
+                model=policy.model,
+                environments=policy.envs,
+                n_trajectories=8,
+                one_hot_code=True
+            )
 
     pickle.dump(ts, open(args.trajectories_file, 'wb'))
 
