@@ -10,6 +10,7 @@ import argparse
 import tensorflow as tf
 import pickle
 from baselines import logger
+from sandbox.rocky.tf.envs.base import TfEnv
 
 
 def atari_arg_parser():
@@ -81,8 +82,6 @@ def generate_trajectories(args):
 
 
 def train_airl(args):
-    env_name = args.env
-
     tf_cfg = tf.ConfigProto(
         allow_soft_placement=True,
         intra_op_parallelism_threads=args.ncpu,
@@ -94,7 +93,7 @@ def train_airl(args):
     ts = pickle.load(open(args.trajectories_file, 'rb'))
 
     with utils.EnvironmentContext(
-            env_name=env_name,
+            env_name=args.env,
             n_envs=args.num_envs,
             seed=args.env_seed,
             **environments.one_hot_atari_modifiers
@@ -108,9 +107,29 @@ def train_airl(args):
         )
 
         import pickle
-        pickle.dump(policy_params, open(args.irl_policy_name, 'wb'))
+        pickle.dump(policy_params, open(args.irl_policy_fname, 'wb'))
         # policy.step = lambda obs: (policy.get_actions(obs)[0], None, None, None)
         # policies.run_policy(model=policy, environments=context.environments)
+
+
+def run_irl(args):
+    with utils.TfContext():
+        with utils.EnvironmentContext(
+                env_name=args.env,
+                n_envs=8,
+                seed=21,
+                **environments.atari_modifiers
+        ) as context:
+            envs = environments.VecGymEnv(context.environments)
+            envs = TfEnv(envs)
+
+            policy = irl.make_irl_policy(
+                irl.policy_config(args),
+                envs=envs,
+                sess=tf.get_default_session()
+            )
+            policy.restore_param_values(args.irl_policy_fname)
+            policy.show_run_in_gym_env(context.environments)
 
 
 if __name__ == '__main__':
