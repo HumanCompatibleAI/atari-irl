@@ -1,6 +1,6 @@
 from atari_irl import utils, environments, training, policies
 import argparse
-from arguments import add_atari_args, EXPERT_POLICY_FILENAME_ARG
+from arguments import add_atari_args, EXPERT_POLICY_FILENAME_ARG, add_bool_feature
 from baselines.ppo2.policies import MlpPolicy, CnnPolicy
 import os.path as osp
 import os
@@ -8,15 +8,22 @@ import os
 
 def train_expert(args):
     utils.logger.configure()
+
+    modifiers = environments.atari_modifiers
+    if not args.atari:
+        modifiers = environments.mujoco_modifiers
+    print(args.atari, modifiers)
+
     with utils.TfContext():
         with utils.EnvironmentContext(
                 env_name=args.env,
                 n_envs=args.num_envs,
                 seed=args.seed,
-                **environments.atari_modifiers
+                **modifiers
         ) as context:
             learner = training.Learner(
-                CnnPolicy, context.environments,
+                CnnPolicy if args.policy_type == 'cnn' else MlpPolicy,
+                context.environments,
                 total_timesteps=args.num_timesteps,
                 vf_coef=0.5, ent_coef=0.01,
                 nsteps=128, noptepochs=4, nminibatches=4,
@@ -57,6 +64,14 @@ if __name__ == '__main__':
         EXPERT_POLICY_FILENAME_ARG,
         help='file for the expert policy',
         default='experts/new_expert'
+    )
+
+    add_bool_feature(parser, 'atari')
+
+    parser.add_argument(
+        '--is_atari',
+        help='Whether or not this is an atari environment',
+        type=bool, default=True
     )
     args = parser.parse_args()
     train_expert(args)

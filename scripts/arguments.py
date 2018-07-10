@@ -10,6 +10,12 @@ import argparse
 
 EXPERT_POLICY_FILENAME_ARG = '--expert_path'
 
+def add_bool_feature(parser, name):
+    feature_parser = parser.add_mutually_exclusive_group(required=False)
+    feature_parser.add_argument('--' + name, dest=name, action='store_true')
+    feature_parser.add_argument('--no-' + name, dest=name, action='store_false')
+    parser.set_defaults(**{name: True})
+
 
 def add_atari_args(parser):
     # see baselines.common.cmd_util
@@ -17,6 +23,7 @@ def add_atari_args(parser):
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num_timesteps', type=int, default=int(10e6))
     parser.add_argument('--num_envs', type=int, default=8)
+    parser.add_argument('--policy_type', default='cnn')
 
 
 def add_trajectory_args(parser):
