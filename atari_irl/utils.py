@@ -51,7 +51,6 @@ class TfContext:
             intra_op_parallelism_threads=ncpu,
             inter_op_parallelism_threads=ncpu,
             device_count={'GPU': 1},
-            log_device_placement=True,
         )
         config.gpu_options.allow_growth=True
         self.tf_session = tf.Session(config=config)
@@ -77,9 +76,9 @@ class EnvironmentContext:
             def _thunk():
                 env = gym.make(self.env_name)
                 env.seed(i)
-                env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
                 for fn in self.env_modifiers:
                     env = fn(env)
+                env = bench.Monitor(env, logger.get_dir(), allow_early_resets=True)
                 return env
             return _thunk
 

@@ -74,12 +74,14 @@ atari_modifiers = {
     ]
 }
 
+
 one_hot_atari_modifiers = {
     'env_modifiers': atari_modifiers['env_modifiers'] + [
         wrap_env_with_args(OneHotDecodingEnv)
     ],
     'vec_env_modifiers': atari_modifiers['vec_env_modifiers']
 }
+
 
 class ConstantStatistics(object):
     def __init__(self, running_mean):
@@ -155,3 +157,7 @@ class VecGymEnv(Env):
         # We're powerless as the environments have already been created.
         # But I'm not too bothered by this, as we can tweak them elsewhere.
         return self.venv
+
+    def reset(self, **kwargs):
+        print("Reset")
+        self.venv.reset(**kwargs)
