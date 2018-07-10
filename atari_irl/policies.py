@@ -120,7 +120,7 @@ def run_policy(*, model, environments, render=True):
     return sum(rewards[:])
 
 
-def sample_trajectories(*, model, environments, one_hot_code=False, n_trajectories=10):
+def sample_trajectories(*, model, environments, one_hot_code=False, n_trajectories=10, render=False):
     # vectorized environments reset after done
     # pirl format: [
     #    (observations, actions), <- single trajectory same length for both
@@ -149,6 +149,9 @@ def sample_trajectories(*, model, environments, one_hot_code=False, n_trajectori
 
         # Figure out our consequences
         obs, _, dones, _ = environments.step(acts)
+
+        if render:
+            environments.render()
 
         # If we're done, then append that trajectory and restart
         for i, done in enumerate(dones):

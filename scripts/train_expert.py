@@ -1,6 +1,6 @@
 from atari_irl import utils, environments, training, policies
 import argparse
-from arguments import atari_arg_parser, EXPERT_POLICY_FILENAME_ARG
+from arguments import add_atari_args, EXPERT_POLICY_FILENAME_ARG
 from baselines.ppo2.policies import MlpPolicy, CnnPolicy
 import os.path as osp
 import os
@@ -41,7 +41,7 @@ def train_expert(args):
                 )
 
             policy.save(
-                args.expert_file,
+                args.expert_path,
                 mean_reward=learner.mean_reward, update=update, seed=args.seed
             )
 
@@ -49,13 +49,14 @@ def train_expert(args):
 
 
 if __name__ == '__main__':
-    parser = atari_arg_parser(argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    ))
+    )
+    add_atari_args(parser)
     parser.add_argument(
         EXPERT_POLICY_FILENAME_ARG,
         help='file for the expert policy',
-        default='experts/expert.pkl'
+        default='experts/expert'
     )
     args = parser.parse_args()
     train_expert(args)

@@ -8,18 +8,19 @@ import argparse
 #from sandbox.rocky.tf.envs.base import TfEnv
 #import pickle
 
-EXPERT_POLICY_FILENAME_ARG = '--expert_file'
+EXPERT_POLICY_FILENAME_ARG = '--expert_path'
 
-def atari_arg_parser(parser):
+
+def add_atari_args(parser):
     # see baselines.common.cmd_util
     parser.add_argument('--env', help='environment ID', default='PongNoFrameskip-v0')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num_timesteps', type=int, default=int(10e6))
     parser.add_argument('--num_envs', type=int, default=8)
-    return parser
 
 
 def add_trajectory_args(parser):
+    parser.add_argument('--n_cpu', help='Number of CPUs', default=8)
     parser.add_argument('--num_trajectories', help='number of trajectories', type=int, default=8)
     parser.add_argument(
         '--one_hot_code',
@@ -34,33 +35,12 @@ def add_trajectory_args(parser):
 
 
 def add_irl_args(parser):
-    parser.add_argument('--n_cpu', help='Number of CPUs', default=8)
     parser.add_argument('--irl_seed', help='seed for the IRL tensorflow session', default=0)
     parser.add_argument(
         '--irl_policy_file',
         help='filename for the IRL policy',
         default='irl_policy_params.pkl'
     )
-
-
-def generate_trajectories(args):
-    with utils.TfContext():
-        with utils.EnvironmentContext(
-                env_name=args.env,
-                n_envs=args.num_envs,
-                seed=args.seed,
-                **environments.atari_modifiers
-        ) as context:
-            policy = policies.EnvPolicy.load(args.expert_path, context.environments)
-            policies.run_policy(model=policy.model, environments=policy.envs)
-            ts = policies.sample_trajectories(
-                model=policy.model,
-                environments=policy.envs,
-                n_trajectories=args.num_trajectories,
-                one_hot_code=args.one_hot_code
-            )
-
-    pickle.dump(ts, open(args.trajectories_file, 'wb'))
 
 
 def train_airl(args):
