@@ -56,7 +56,7 @@ if __name__ == '__main__':
     parser.add_argument(
         EXPERT_POLICY_FILENAME_ARG,
         help='file for the expert policy',
-        default='experts/expert'
+        default='experts/new_expert'
     )
     args = parser.parse_args()
     train_expert(args)

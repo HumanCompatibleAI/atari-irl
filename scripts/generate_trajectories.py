@@ -32,7 +32,7 @@ if __name__ == '__main__':
     parser.add_argument(
         EXPERT_POLICY_FILENAME_ARG,
         help='file for the expert policy',
-        default='experts/expert.pkl'
+        default='experts/default_expert'
     )
     parser.add_argument(
         '--render', help='whether or not to render the sampled trajectories', default=True
