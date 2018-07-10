@@ -27,10 +27,10 @@ from baselines.common.input import observation_input
 from baselines.a2c.utils import fc
 from baselines.ppo2.policies import nature_cnn
 
-from environments import VecGymEnv
-from utils import one_hot
+from .environments import VecGymEnv
+from .utils import one_hot
+from .policies import EnvPolicy
 
-from policies import EnvPolicy
 from sandbox.rocky.tf.misc import tensor_utils
 
 
@@ -63,16 +63,17 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
             self.scope = scope
 
+        StochasticPolicy.__init__(self, envs.spec)
+        self.name = name
+
         self.probs = tf.nn.softmax(self.act_model.pd.logits)
         obs_var = self.act_model.X
-        #dist_info_sym = self.dist_info_sym(None, None)
+
+        self.get_param_values = lambda : sess.run(self.get_params())
         self._f_dist = tensor_utils.compile_function(
             inputs=[obs_var],
             outputs=self.probs
         )
-
-        StochasticPolicy.__init__(self, envs.spec)
-        self.name = name
 
     @property
     def vectorized(self):
@@ -115,9 +116,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     def distribution(self):
         return self._dist
 
-    def get_param_values(self):
-        return self.act_model.sess.run(self.get_params())
-
     def restore_param_values(self, fname):
         params = pickle.load(open(fname, 'rb'))
         param_tensors = self.get_params()
@@ -127,11 +125,11 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         tf.get_default_session().run(restores)
 
     def show_run_in_gym_env(self, venv):
-        dones = False
+        dones = [False]
         obs = venv.reset()
 
         while not any(dones):
-            actions, _, = self.get_actions(obs)
+            actions, _ = self.get_actions(obs)
             obs, _, dones, _ = venv.step(actions)
             venv.render()
 
@@ -170,7 +168,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 model_cfg = {'model': AIRLStateOnly, 'state_only': True,
                              'max_itrs': 10}
             if policy_cfg is None:
-                policy_cfg = policy_cfg(None)
+                policy_cfg = policy_config(None)
 
             model_kwargs = dict(model_cfg)
             model_cls = model_kwargs.pop('model')
@@ -207,7 +205,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
 
                 # Must pickle policy rather than returning it directly,
                 # since parameters in policy will not survive across tf sessions.
-                policy_params = sess.run(policy.get_params())
+                policy_params = policy.get_param_values()
 
     reward = model_cfg, reward_params
     return reward, policy_params
