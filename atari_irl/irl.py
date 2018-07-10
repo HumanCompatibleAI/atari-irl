@@ -125,11 +125,11 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         tf.get_default_session().run(restores)
 
     def show_run_in_gym_env(self, venv):
-        dones = False
+        dones = [False]
         obs = venv.reset()
 
         while not any(dones):
-            actions, _, = self.get_actions(obs)
+            actions, _ = self.get_actions(obs)
             obs, _, dones, _ = venv.step(actions)
             venv.render()
 

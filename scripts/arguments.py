@@ -5,7 +5,7 @@ import os
 import argparse
 #
 #
-#from sandbox.rocky.tf.envs.base import TfEnv
+#
 #import pickle
 
 EXPERT_POLICY_FILENAME_ARG = '--expert_path'
@@ -49,24 +49,7 @@ def add_irl_args(parser):
     )
 
 
-def run_irl_policy(args):
-    with utils.TfContext():
-        with utils.EnvironmentContext(
-                env_name=args.env,
-                n_envs=args.num_env,
-                seed=args.seed,
-                **environments.atari_modifiers
-        ) as context:
-            envs = environments.VecGymEnv(context.environments)
-            envs = TfEnv(envs)
 
-            policy = irl.make_irl_policy(
-                irl.policy_config(args),
-                envs=envs,
-                sess=tf.get_default_session()
-            )
-            policy.restore_param_values(args.irl_policy_file)
-            policy.show_run_in_gym_env(context.environments)
 
 
 
