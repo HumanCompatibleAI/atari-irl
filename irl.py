@@ -133,10 +133,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         while not any(dones):
             actions, _, = self.get_actions(obs)
             obs, _, dones, _ = venv.step(actions)
-            venv.reender()
-
-from tensorflow.python import debug as tf_debug
-
+            venv.render()
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
@@ -147,6 +144,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
     train_graph = tf.Graph()
     with train_graph.as_default():
         sess = tf.Session(config=tf_cfg)
+        # from tensorflow.python import debug as tf_debug
         #sess = tf_debug.LocalCLIDebugWrapperSession(sess , ui_type='readline')
         with sess.as_default():
             tf.set_random_seed(seed)
