@@ -27,10 +27,10 @@ from baselines.common.input import observation_input
 from baselines.a2c.utils import fc
 from baselines.ppo2.policies import nature_cnn
 
-from environments import VecGymEnv
-from utils import one_hot
+from .environments import VecGymEnv
+from .utils import one_hot
+from .policies import EnvPolicy
 
-from policies import EnvPolicy
 from sandbox.rocky.tf.misc import tensor_utils
 
 

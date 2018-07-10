@@ -4,7 +4,7 @@ from baselines import logger
 from baselines.common import explained_variance
 from baselines.ppo2.ppo2 import Runner, constfn, safemean
 
-import policies
+from . import policies
 
 from collections import deque, namedtuple
 import time

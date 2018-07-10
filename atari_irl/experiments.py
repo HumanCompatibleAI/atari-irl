@@ -1,8 +1,4 @@
-import utils
-import environments
-import training
-import policies
-import irl
+from . import utils, environments, training, policies, irl
 from baselines.ppo2.policies import MlpPolicy, CnnPolicy
 import os.path as osp
 import os

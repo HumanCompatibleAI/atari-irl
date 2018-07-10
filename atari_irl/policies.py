@@ -1,7 +1,7 @@
 import numpy as np
 from baselines.ppo2.ppo2 import Model
-import environments
-from utils import one_hot
+from . import environments
+from .utils import one_hot
 import os
 import os.path as osp
 import joblib
