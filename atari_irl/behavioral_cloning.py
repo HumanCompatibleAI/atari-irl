@@ -3,6 +3,7 @@ import tensorflow as tf
 from baselines.ppo2.policies import CnnPolicy
 
 from . import policies, training
+import pickle
 
 
 def update_policy(policy, trajectories):
@@ -16,12 +17,14 @@ def relabel_trajectory_observations(policy, trajectory):
 class CloningContext:
     def __init__(
             self, policy, envs, policy_class, *,
+            start_trajectories=None,
             nsteps=2048, noptepochs=4, nminibatches=32, n_trajectories=10
     ):
         self.base_policy = policy
         self.envs = envs
 
         self.n_trajectories = n_trajectories
+        self.base_trajectories = start_trajectories
         self.batching_config = training.make_batching_config(
             env=envs,
             nsteps=nsteps, noptepochs=noptepochs, nminibatches=nminibatches
@@ -36,10 +39,13 @@ class CloningContext:
         )
 
     def __enter__(self):
-        self.base_trajectories = policies.sample_trajectories(
-            model=self.base_policy, environments=self.envs,
-            n_trajectories=self.n_trajectories
-        )
+        if self.base_trajectories is None:
+            self.base_trajectories = policies.sample_trajectories(
+                model=self.base_policy, environments=self.envs,
+                n_trajectories=self.n_trajectories
+            )
+        else:
+            self.base_trajectories = pickle.load(open(self.base_trajectories, 'rb'))
         return self
 
     def __exit__(self, *args):
