@@ -21,7 +21,7 @@ class CloningContext:
         self.base_policy = policy
         self.envs = envs
 
-        self.n_trajectorie =n_trajectories
+        self.n_trajectories = n_trajectories
         self.batching_config = training.make_batching_config(
             env=envs,
             nsteps=nsteps, noptepochs=noptepochs, nminibatches=nminibatches
