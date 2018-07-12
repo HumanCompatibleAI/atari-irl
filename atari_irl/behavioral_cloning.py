@@ -154,7 +154,10 @@ class TrainablePolicy:
             self.train_policy = policy_class(
                 **kwargs, nbatch=batching_config.nbatch_train, reuse=True
             )
-            params = tf.trainable_variables()
+            # It's super important that this is scoped, otherwise we'll include
+            # tensorflow nodes that aren't actually part of the trainable
+            # policy
+            params = tf.trainable_variables(scope=name)
 
             # construct the loss and start the training function
             self.loss, self.train = make_cost(
@@ -163,8 +166,15 @@ class TrainablePolicy:
                 training_config=training_config,
                 sess=self.sess
             )
+
+            # If we do the globals initializer we'll overwrite whatever we
+            # defined already. That would be bad, so we just only initialize
+            # the variables actually associated with the policy
+            for p in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=name):
+                self.sess.run(p.initializer)
+
         self.step = self.act_policy.step
-        tf.global_variables_initializer().run(session=sess)
+
 
 
 def sample_trajectories(policy, environments, batch_size):
