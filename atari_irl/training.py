@@ -18,9 +18,8 @@ RunInfo.train_args = lambda self: (
     self.obs, self.returns, self.masks, self.actions, self.values, self.neglogpacs
 )
 BatchingConfig = namedtuple('BatchingInfo', [
-    'nbatch', 'noptepochs', 'nenvs', 'nsteps', 'nminibatches'
+    'nbatch', 'nbatch_train', 'noptepochs', 'nenvs', 'nsteps', 'nminibatches'
 ])
-
 
 def train_steps(
         *, model, run_info, batching_config, lrnow, cliprangenow, nbatch_train
@@ -97,6 +96,16 @@ def setup_policy(*, model_args, nenvs, ob_space, ac_space, env, save_env, checkp
     return policy
 
 
+def make_batching_config(*,env, nsteps, noptepochs, nminibatches):
+    nenvs = env.num_envs
+    nbatch = nenvs * nsteps
+    nbatch_train = nbatch // nminibatches
+    return BatchingConfig(
+        nbatch=nbatch, nbatch_train=nbatch_train, noptepochs=noptepochs,
+        nenvs=nenvs, nsteps=nsteps, nminibatches=nminibatches
+    )
+
+
 class Learner:
     def __init__(self, policy_class, env, *, total_timesteps, nsteps=2048,
                  ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
@@ -117,24 +126,24 @@ class Learner:
 
         total_timesteps = int(total_timesteps)
 
-        nenvs = env.num_envs
         ob_space = env.observation_space
         ac_space = env.action_space
-        nbatch = nenvs * nsteps
-        nbatch_train = nbatch // nminibatches
-        batching_config = BatchingConfig(
-            nbatch=nbatch, noptepochs=noptepochs, nenvs=nenvs, nsteps=nsteps,
+
+        batching_config = make_batching_config(
+            env=env, nsteps=nsteps, noptepochs=noptepochs,
             nminibatches=nminibatches
         )
 
         model_args = dict(
-            policy=policy_class, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs,
-            nbatch_train=nbatch_train, nsteps=nsteps, ent_coef=ent_coef,
-            vf_coef=vf_coef, max_grad_norm=max_grad_norm
+            policy=policy_class, ob_space=ob_space, ac_space=ac_space,
+            nbatch_act=batching_config.nenvs,
+            nbatch_train=batching_config.nbatch_train,
+            nsteps=batching_config.nsteps,
+            ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm
         )
 
         policy = setup_policy(
-            model_args=model_args, env=env, nenvs=nenvs, checkpoint=checkpoint,
+            model_args=model_args, env=env, nenvs=env.num_envs, checkpoint=checkpoint,
             ob_space=ob_space, ac_space=ac_space, save_env=save_env
         )
 
@@ -149,8 +158,8 @@ class Learner:
 
         # Set our last few run configurations
         self.callbacks = []
-        self.nbatch = nbatch
-        self.nupdates = total_timesteps // nbatch
+        self.nbatch = batching_config.nbatch
+        self.nupdates = total_timesteps // batching_config.nbatch
 
         # Initialize the objects that will change as we learn
         self._update = 1

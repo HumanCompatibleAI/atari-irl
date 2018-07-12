@@ -17,15 +17,18 @@ mujoco_modifiers = {
     'vec_env_modifiers': [vec_normalize]
 }
 
+
 # from baselines.common.cmd_util.make_atari_env
 def wrap_env_with_args(Wrapper, **kwargs):
     return lambda env: Wrapper(env, **kwargs)
+
 
 def noop_reset(noop_max):
     def _thunk(env):
         assert 'NoFrameskip' in env.spec.id
         return NoopResetEnv(env, noop_max=noop_max)
     return _thunk
+
 
 def atari_setup(env):
     # from baselines.common.atari_wrappers
@@ -67,7 +70,7 @@ atari_modifiers = {
         wrap_env_with_args(NoopResetEnv, noop_max=30),
         wrap_env_with_args(MaxAndSkipEnv, skip=4),
         wrap_deepmind,
-        wrap_env_with_args(TimeLimitEnv, time_limit=5000)
+        #wrap_env_with_args(TimeLimitEnv, time_limit=5000)
     ],
     'vec_env_modifiers': [
         wrap_env_with_args(VecFrameStack, nstack=4)
