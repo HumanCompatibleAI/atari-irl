@@ -21,7 +21,6 @@ BatchingConfig = namedtuple('BatchingInfo', [
     'nbatch', 'nbatch_train', 'noptepochs', 'nenvs', 'nsteps', 'nminibatches'
 ])
 
-
 def train_steps(
         *, model, run_info, batching_config, lrnow, cliprangenow, nbatch_train
 ):
