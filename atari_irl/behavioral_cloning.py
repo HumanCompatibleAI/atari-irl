@@ -317,6 +317,8 @@ def dagger(
         policy, envs, policy_class, *, total_timesteps,
         nsteps=2048, noptepochs=4, nminibatches=32, n_trajectories=10
 ):
+    # This assumes we're already in a tensorflow context
+    # If we're not, then the policy clone won't work
     with CloningContext(
             policy, envs, policy_class,
             nsteps=nsteps, noptepochs=noptepochs, nminibatches=nminibatches,
@@ -341,12 +343,15 @@ def dagger(
             observations = np.vstack([observations, observations_t])
             actions      = np.vstack([actions, actions_t])
             logger.logkv(t)
+    return context.policy_clone
 
 
 def imitate(
         policy, envs, policy_class, *, n_iter=500,
         nsteps=2048, noptepochs=4, nminibatches=32, n_trajectories=10
 ):
+    # This assumes we're already in a tensorflow context
+    # If we're not, then the policy clone won't work
     with CloningContext(
             policy, envs, policy_class,
             nsteps=nsteps, noptepochs=noptepochs, nminibatches=nminibatches,
@@ -357,3 +362,4 @@ def imitate(
         update_policy(
             context.policy_clone, observations, actions, n_iter=n_iter
         )
+    return context.policy_clone
