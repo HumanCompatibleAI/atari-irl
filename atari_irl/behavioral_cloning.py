@@ -342,3 +342,18 @@ def dagger(
             actions      = np.vstack([actions, actions_t])
             logger.logkv(t)
 
+
+def imitate(
+        policy, envs, policy_class, *, n_iter=500,
+        nsteps=2048, noptepochs=4, nminibatches=32, n_trajectories=10
+):
+    with CloningContext(
+            policy, envs, policy_class,
+            nsteps=nsteps, noptepochs=noptepochs, nminibatches=nminibatches,
+            n_trajectories=n_trajectories
+    ) as context:
+        observations, actions = context.base_trajectories
+        # Update the policy clone
+        update_policy(
+            context.policy_clone, observations, actions, n_iter=n_iter
+        )
