@@ -69,7 +69,8 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         self.probs = tf.nn.softmax(self.act_model.pd.logits)
         obs_var = self.act_model.X
 
-        self.get_param_values = lambda : sess.run(self.get_params())
+        self.tensor_values = lambda **kwargs: sess.run(self.get_params())
+
         self._f_dist = tensor_utils.compile_function(
             inputs=[obs_var],
             outputs=self.probs
@@ -308,7 +309,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
 
                 # Must pickle policy rather than returning it directly,
                 # since parameters in policy will not survive across tf sessions.
-                policy_params = policy.get_param_values()
+                policy_params = policy.tensor_values()
 
     reward = model_cfg, reward_params
     return reward, policy_params
