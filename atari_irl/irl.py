@@ -17,14 +17,14 @@ from sandbox.rocky.tf.samplers.batch_sampler import BatchSampler
 from rllab.misc.overrides import overrides
 
 from airl.algos.irl_trpo import IRLTRPO
-from airl.models.airl_state import AIRL as AIRLStateOnly
+from airl.models.airl_state import AIRL
 from airl.utils.log_utils import rllab_logdir
+from airl.models.fusion_manager import RamFusionDistr
 from airl.models.imitation_learning import DIST_CATEGORICAL
 
-from baselines.ppo2.policies import CnnPolicy
+from baselines.ppo2.policies import CnnPolicy, nature_cnn, fc
 from baselines.common.distributions import make_pdtype
 from baselines.common.input import observation_input
-from baselines.a2c.utils import fc
 from baselines.ppo2.policies import nature_cnn
 
 from .environments import VecGymEnv
@@ -134,10 +134,104 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             venv.render()
 
 
+def cnn_net(x, actions=None, dout=1, **conv_kwargs):
+    h = nature_cnn(x, **conv_kwargs)
+    if actions is not None:
+        # Actions must be one-hot coded, otherwise this won't make any sense
+        h = tf.concat(h, actions, axis=1)
+    h2 = tf.nn.relu(fc(h, 'action_state_vec', nh=20, init_scale=np.sqrt(2)))
+    output = fc(h2, 'output', nh=dout, init_scale=np.sqrt(2))
+    return output
+
+
+class AtariAIRL(AIRL):
+    """
+    Args:
+        fusion (bool): Use trajectories from old iterations to train.
+        state_only (bool): Fix the learned reward to only depend on state.
+        score_discrim (bool): Use log D - log 1-D as reward (if true you should not need to use an entropy bonus)
+        max_itrs (int): Number of training iterations to run per fit step.
+    """
+    #TODO(Aaron): Figure out what all of these args mean
+    def __init__(self, env_spec,
+                 expert_trajs=None,
+                 reward_arch=cnn_net,
+                 reward_arch_args=None,
+                 value_fn_arch=cnn_net,
+                 score_discrim=False,
+                 discount=1.0,
+                 state_only=False,
+                 max_itrs=100,
+                 fusion=False,
+                 name='airl'):
+        super(AIRL, self).__init__()
+        if reward_arch_args is None:
+            reward_arch_args = {}
+
+        if fusion:
+            self.fusion = RamFusionDistr(100, subsample_ratio=0.5)
+        else:
+            self.fusion = None
+        self.dO = env_spec.observation_space.flat_dim
+        self.dOshape = env_spec.observation_space.shape
+        self.dU = env_spec.action_space.flat_dim
+        assert isinstance(env_spec.action_space, Box)
+        self.score_discrim = score_discrim
+        self.gamma = discount
+        assert value_fn_arch is not None
+        self.set_demos(expert_trajs)
+        self.state_only=state_only
+        self.max_itrs=max_itrs
+
+        # build energy model
+        with tf.variable_scope(name) as _vs:
+            # Should be batch_size x T x dO/dU
+            self.obs_t = tf.placeholder(tf.float32, list((None,) + self.dOshape), name='obs')
+            self.nobs_t = tf.placeholder(tf.float32, list((None,) + self.dOshape), name='nobs')
+            self.act_t = tf.placeholder(tf.float32, [None, self.dU], name='act')
+            self.nact_t = tf.placeholder(tf.float32, [None, self.dU], name='nact')
+            self.labels = tf.placeholder(tf.float32, [None, 1], name='labels')
+            self.lprobs = tf.placeholder(tf.float32, [None, 1], name='log_probs')
+            self.lr = tf.placeholder(tf.float32, (), name='lr')
+
+            with tf.variable_scope('discrim') as dvs:
+                rew_input = self.obs_t
+                with tf.variable_scope('reward'):
+                    if not self.state_only:
+                        self.reward = reward_arch(
+                            rew_input, dout=1, **reward_arch_args
+                        )
+                    else:
+                        self.reward = reward_arch(
+                            rew_input, actions=self.act_t,
+                            dout=1, **reward_arch_args
+                        )
+                # value function shaping
+                with tf.variable_scope('vfn'):
+                    fitted_value_fn_n = value_fn_arch(self.nobs_t, dout=1)
+                with tf.variable_scope('vfn', reuse=True):
+                    self.value_fn = fitted_value_fn = value_fn_arch(self.obs_t, dout=1)
+
+                # Define log p_tau(a|s) = r + gamma * V(s') - V(s)
+                self.qfn = self.reward + self.gamma*fitted_value_fn_n
+                log_p_tau = self.reward  + self.gamma*fitted_value_fn_n - fitted_value_fn
+
+            log_q_tau = self.lprobs
+
+            log_pq = tf.reduce_logsumexp([log_p_tau, log_q_tau], axis=0)
+            self.discrim_output = tf.exp(log_p_tau-log_pq)
+            cent_loss = -tf.reduce_mean(self.labels*(log_p_tau-log_pq) + (1-self.labels)*(log_q_tau-log_pq))
+
+            self.loss = cent_loss
+            tot_loss = self.loss
+            self.step = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(tot_loss)
+            self._make_param_ops(_vs)
+
+
 def policy_config(args):
     return {
         'policy': DiscreteIRLPolicy,
-        'policy_model': CnnPolicy,
+        'policy_model': CnnPolicy
     }
 
 
@@ -149,6 +243,16 @@ def make_irl_policy(policy_cfg, envs, sess):
         sess=sess,
         **policy_cfg
     )
+
+
+def irl_model_config(args):
+    return {
+        'model': AtariAIRL,
+        'state_only': False,
+        'max_itrs': 20,
+        'reward_arch': cnn_net,
+        'value_fn_arch': cnn_net
+    }
 
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
@@ -165,8 +269,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
         with sess.as_default():
             tf.set_random_seed(seed)
             if model_cfg is None:
-                model_cfg = {'model': AIRLStateOnly, 'state_only': True,
-                             'max_itrs': 10}
+                model_cfg = irl_model_config(None)
             if policy_cfg is None:
                 policy_cfg = policy_config(None)
 
