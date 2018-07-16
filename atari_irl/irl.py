@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import pickle
 
+from rllab.misc import logger
 from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
 from rllab.baselines.zero_baseline import ZeroBaseline
 from sandbox.rocky.tf.envs.base import TfEnv
@@ -29,9 +30,12 @@ from baselines.ppo2.policies import nature_cnn
 
 from .environments import VecGymEnv
 from .utils import one_hot
-from .policies import EnvPolicy
+from .policies import EnvPolicy, sample_trajectories
 
 from sandbox.rocky.tf.misc import tensor_utils
+
+import joblib
+import time
 
 
 from tensorflow.python import debug as tf_debug
@@ -117,8 +121,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     def distribution(self):
         return self._dist
 
-    def restore_param_values(self, fname):
-        params = pickle.load(open(fname, 'rb'))
+    def restore_param_values(self, params):
         param_tensors = self.get_params()
         restores = []
         for tf_tensor, np_array in zip(param_tensors, params):
@@ -256,6 +259,102 @@ def irl_model_config(args):
     }
 
 
+def make_irl_model(model_cfg, *, env_spec, expert_trajs):
+    model_kwargs = dict(model_cfg)
+    model_cls = model_kwargs.pop('model')
+    return model_cls(
+        env_spec=env_spec,
+        expert_trajs=expert_trajs,
+        **model_kwargs
+    )
+
+
+class IRLRunner(IRLTRPO):
+    def __init__(self, *args, cmd_line_args=None, **kwargs):
+        IRLTRPO.__init__(self, *args, **kwargs)
+        self.cmd_line_args = cmd_line_args
+
+    @overrides
+    def get_itr_snapshot(self, itr, samples_data):
+        return dict(
+            itr=itr,
+            cmd_line_args=self.cmd_line_args,
+            policy_params=self.policy.tensor_values(),
+            irl_params=self.get_irl_params(),
+        )
+
+    @staticmethod
+    def restore_from_snapshot(snapshot_file, envs, expert_trajs, sess):
+        data = joblib.load(open(snapshot_file, 'rb'))
+        args = data['cmd_line_args']
+
+        policy = make_irl_policy(policy_config(args), envs, sess)
+        irl_model = make_irl_model(irl_model_config(args), env_spec=envs.spec, expert_trajs=expert_trajs)
+
+        policy.restore_param_values(data['policy_params'])
+        irl_model.set_params(data['irl_params'])
+
+        return policy, irl_model
+
+    def obtain_samples(self, itr):
+        paths = super(IRLRunner, self).obtain_samples(itr)
+        negs = 0
+        poss = 0
+        for i in range(len(paths)):
+            negs += (paths[i]['rewards'] == -1).sum()
+            poss += (paths[i]['rewards'] == 1).sum()
+
+        logger.record_tabular("PointsGained", poss)
+        logger.record_tabular("PointsLost", negs)
+
+        return paths
+
+    def train(self):
+        sess = tf.get_default_session()
+        sess.run(tf.global_variables_initializer())
+        if self.init_pol_params is not None:
+            self.policy.set_param_values(self.init_pol_params)
+        if self.init_irl_params is not None:
+            self.irl_model.set_params(self.init_irl_params)
+        self.start_worker()
+        start_time = time.time()
+
+        returns = []
+        for itr in range(self.start_itr, self.n_itr):
+            itr_start_time = time.time()
+            with logger.prefix('itr #%d | ' % itr):
+                logger.log("Obtaining samples...")
+                paths = self.obtain_samples(itr)
+
+                logger.log("Processing samples...")
+                paths = self.compute_irl(paths, itr=itr)
+                returns.append(self.log_avg_returns(paths))
+                samples_data = self.process_samples(itr, paths)
+
+                logger.log("Logging diagnostics...")
+                self.log_diagnostics(paths)
+                logger.log("Optimizing policy...")
+                for i in range(100):
+                    with logger.prefix('policy itr #%d | ' % i):
+                    self.optimize_policy(itr, samples_data)
+
+                logger.log("Saving snapshot...")
+                params = self.get_itr_snapshot(itr, samples_data)  # , **kwargs)
+                if self.store_paths:
+                    params["paths"] = samples_data["paths"]
+                logger.save_itr_params(itr, params)
+                logger.log("Saved")
+                logger.record_tabular('Time', time.time() - start_time)
+                logger.record_tabular('ItrTime', time.time() - itr_start_time)
+                logger.dump_tabular(with_prefix=False)
+                if self.plot:
+                    self.update_plot()
+                    if self.pause_for_plot:
+                        input("Plotting evaluation run: Press Enter to "
+                              "continue...")
+        return
+
+
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
          tf_cfg, model_cfg=None, policy_cfg=None, training_cfg={}):
@@ -274,11 +373,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
             if policy_cfg is None:
                 policy_cfg = policy_config(None)
 
-            model_kwargs = dict(model_cfg)
-            model_cls = model_kwargs.pop('model')
-            irl_model = model_cls(env_spec=envs.spec, expert_trajs=experts,
-                                  **model_kwargs)
-
+            irl_model = make_irl_model(model_cfg, env_spec=envs.spec, expert_trajs=experts)
             policy = make_irl_policy(policy_cfg, envs, sess)
 
             training_kwargs = {
@@ -291,7 +386,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 'store_paths': False,
             }
             training_kwargs.update(training_cfg)
-            algo = IRLTRPO(
+            algo = IRLRunner(
                 env=envs,
                 policy=policy,
                 irl_model=irl_model,

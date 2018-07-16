@@ -1,1 +1,1 @@
-from . import utils, training, policies, environments
+from . import utils, training, policies, environments, irl
