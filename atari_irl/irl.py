@@ -334,9 +334,9 @@ class IRLRunner(IRLTRPO):
                 logger.log("Logging diagnostics...")
                 self.log_diagnostics(paths)
                 logger.log("Optimizing policy...")
-                for i in range(100):
-                    with logger.prefix('policy itr #%d | ' % i):
-                    self.optimize_policy(itr, samples_data)
+                #for i in range(1):
+                #    with logger.prefix('policy itr #%d | ' % i):
+                self.optimize_policy(itr, samples_data)
 
                 logger.log("Saving snapshot...")
                 params = self.get_itr_snapshot(itr, samples_data)  # , **kwargs)

@@ -164,3 +164,74 @@ class VecGymEnv(Env):
     def reset(self, **kwargs):
         print("Reset")
         self.venv.reset(**kwargs)
+
+
+class JustPress1Environment(gym.Env):
+    def __init__(self):
+        super().__init__()
+        self.reward_range = (0, 1)
+        self.action_space = gym.spaces.Discrete(2)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(3, 9, 9))
+
+        self.black = np.zeros(self.observation_space.shape)
+        self.white = np.ones(self.observation_space.shape)
+
+    def step(self, action):
+        if action == 0:
+            return self.black, 0, False, {}
+        else:
+            return self.white, 1, False, {}
+
+    def reset(self):
+        return self.black
+
+    def render(self):
+        raise NotImplementedError
+
+
+class SimonSaysEnvironment(JustPress1Environment):
+    def __init__(self):
+        super().__init__()
+        self.seed = 0
+        self.state = np.random.seed(0)
+        self.next_move = self.state.randint(2)
+        self.obs_map = {
+            0: self.black,
+            1: self.white
+        }
+
+    def seed(self, seed=None):
+        if seed is None:
+            seed = 0
+        self.seed = seed
+        self.state = np.random.seed(seed)
+
+    def step(self, action):
+        reward = 0
+        if action == self.next_move:
+            reward = 1
+        obs = self.reset()
+        return obs, reward, False, {'next_move': self.next_move}
+
+    def reset(self):
+        self.next_move = self.state.randint(2)
+        return self.obs_map[self.next_move]
+
+
+class VisionSaysEnvironment(SimonSaysEnvironment):
+    def __init__(self):
+        super().__init__()
+        self.zero = np.zeros(self.observation_space.shape)
+        self.one = np.zeros(self.observation_space.shape)
+
+        self.zero[:, 3, 2:7] = 1
+        self.zero[:, 5, 2:7] = 1
+        self.zero[:, 4, 2] = 1
+        self.zero[:, 4, 6] = 1
+
+        self.one[:, 4, 2:7] = 1
+
+        self.obs_map = {
+            0: self.zero,
+            1: self.one
+        }
