@@ -174,7 +174,7 @@ class JustPress1Environment(gym.Env):
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(90, 90, 3))
 
         self.black = np.zeros(self.observation_space.shape)
-        self.white = np.ones(self.observation_space.shape)
+        self.white = np.ones(self.observation_space.shape) * 255
         
         self.random_seed = 0
         self.np_random = np.random.RandomState(0)
@@ -190,9 +190,9 @@ class JustPress1Environment(gym.Env):
 
     def step(self, action):
         if action == 0:
-            return self.black, 0, self.is_done(), {}
+            return self.black, 0.0, self.is_done(), {}
         else:
-            return self.white, 1, self.is_done(), {}
+            return self.white, 1.0, self.is_done(), {}
 
     def reset(self):
         return self.black
@@ -220,9 +220,9 @@ class SimonSaysEnvironment(JustPress1Environment):
         return self.turns > 100
 
     def step(self, action):
-        reward = 0
+        reward = 0.0
         if isinstance(action, np.int64) and action == self.next_move or not isinstance(action, np.int64) and action[0] == self.next_move:
-            reward = 1
+            reward = 1.0
         obs = self.reset()
         return obs, reward, self.is_done(), {'next_move': self.next_move}
 
@@ -238,12 +238,10 @@ class VisionSaysEnvironment(SimonSaysEnvironment):
         self.zero = np.zeros(self.observation_space.shape)
         self.one = np.zeros(self.observation_space.shape)
 
-        self.zero[3, 2:7, :] = 1
-        self.zero[5, 2:7, :] = 1
-        self.zero[4, 2, :] = 1
-        self.zero[4, 6, :] = 1
-
-        self.one[4, 2:7, :] = 1
+        self.zero[3, 2:7, :] = 255
+        self.zero[5, 2:7, :] = 255
+        self.zero[4, 2, :] = 255
+        self.zero[4, 6, :] = 255
 
         self.obs_map = {
             0: self.zero,

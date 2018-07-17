@@ -36,6 +36,7 @@ from sandbox.rocky.tf.misc import tensor_utils
 
 import joblib
 import time
+from collections import defaultdict
 
 
 from tensorflow.python import debug as tf_debug
@@ -253,7 +254,7 @@ def irl_model_config(args):
     return {
         'model': AtariAIRL,
         'state_only': False,
-        'max_itrs': 20,
+        #'max_itrs': 100,
         'reward_arch': cnn_net,
         'value_fn_arch': cnn_net
     }
@@ -362,6 +363,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
     train_graph = tf.Graph()
     with train_graph.as_default():
         sess = tf.Session(config=tf_cfg)
+        print(sess)
         # from tensorflow.python import debug as tf_debug
         #sess = tf_debug.LocalCLIDebugWrapperSession(sess , ui_type='readline')
         with sess.as_default():
@@ -374,11 +376,17 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
             irl_model = make_irl_model(model_cfg, env_spec=envs.spec, expert_trajs=experts)
             policy = make_irl_policy(policy_cfg, envs, sess)
 
+            ablation_config = defaultdict(lambda: (1.0, True))
+            ablation_config['train_rl'] = (0.0, False)
+
+            ablation = 'default'
+            irl_model_wt, zero_environment_reward = ablation_config[ablation]
+
             training_kwargs = {
                 'n_itr': 1000,
                 'batch_size': 500,
-                'max_path_length': 1000,
-                'irl_model_wt': 1.0,
+                'max_path_length': 100,
+                'irl_model_wt': irl_model_wt,
                 'entropy_weight': 0.1,
                 # paths substantially increase storage requirements
                 'store_paths': False,
@@ -393,7 +401,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 irl_model=irl_model,
                 discount=discount,
                 sampler_args=dict(n_envs=venv.num_envs),
-                zero_environment_reward=True,
+                zero_environment_reward=zero_environment_reward,
                 baseline=ZeroBaseline(env_spec=envs.spec),
                 **training_kwargs
             )
