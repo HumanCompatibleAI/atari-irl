@@ -170,51 +170,65 @@ class JustPress1Environment(gym.Env):
     def __init__(self):
         super().__init__()
         self.reward_range = (0, 1)
-        self.action_space = gym.spaces.Discrete(2)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(3, 9, 9))
+        self.action_space = gym.spaces.Discrete(6)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(90, 90, 3))
 
         self.black = np.zeros(self.observation_space.shape)
         self.white = np.ones(self.observation_space.shape)
+        
+        self.random_seed = 0
+        self.np_random = np.random.RandomState(0)
+        
+    def seed(self, seed=None):
+        if seed is None:
+            seed = 0
+        self.random_seed = seed
+        self.np_random.seed(seed)
+        
+    def is_done(self):
+        return self.np_random.random_sample() > .99
 
     def step(self, action):
         if action == 0:
-            return self.black, 0, False, {}
+            return self.black, 0, self.is_done(), {}
         else:
-            return self.white, 1, False, {}
+            return self.white, 1, self.is_done(), {}
 
     def reset(self):
         return self.black
 
     def render(self):
         raise NotImplementedError
+        
+    def get_action_meanings(self):
+        return ['NOOP', 'OP', 'USELESS1', 'USELESS2', 'USELESS3', 'USELESS4']
 
 
 class SimonSaysEnvironment(JustPress1Environment):
     def __init__(self):
         super().__init__()
-        self.seed = 0
-        self.state = np.random.seed(0)
-        self.next_move = self.state.randint(2)
+        
+        self.next_move = self.np_random.randint(2)
         self.obs_map = {
             0: self.black,
             1: self.white
         }
-
-    def seed(self, seed=None):
-        if seed is None:
-            seed = 0
-        self.seed = seed
-        self.state = np.random.seed(seed)
+        self.turns = 0
+        
+    def is_done(self):
+        self.turns += 1
+        return self.turns > 100
 
     def step(self, action):
         reward = 0
-        if action == self.next_move:
+        if isinstance(action, np.int64) and action == self.next_move or not isinstance(action, np.int64) and action[0] == self.next_move:
             reward = 1
         obs = self.reset()
-        return obs, reward, False, {'next_move': self.next_move}
+        return obs, reward, self.is_done(), {'next_move': self.next_move}
 
     def reset(self):
-        self.next_move = self.state.randint(2)
+        self.turns = 0
+        self.next_move = self.np_random.randint(2)
         return self.obs_map[self.next_move]
 
 
@@ -224,12 +238,12 @@ class VisionSaysEnvironment(SimonSaysEnvironment):
         self.zero = np.zeros(self.observation_space.shape)
         self.one = np.zeros(self.observation_space.shape)
 
-        self.zero[:, 3, 2:7] = 1
-        self.zero[:, 5, 2:7] = 1
-        self.zero[:, 4, 2] = 1
-        self.zero[:, 4, 6] = 1
+        self.zero[3, 2:7, :] = 1
+        self.zero[5, 2:7, :] = 1
+        self.zero[4, 2, :] = 1
+        self.zero[4, 6, :] = 1
 
-        self.one[:, 4, 2:7] = 1
+        self.one[4, 2:7, :] = 1
 
         self.obs_map = {
             0: self.zero,

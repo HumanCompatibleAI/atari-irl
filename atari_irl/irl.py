@@ -378,15 +378,17 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
 
             training_kwargs = {
                 'n_itr': 1000,
-                'batch_size': 10000,
-                'max_path_length': 5000,
+                'batch_size': 500,
+                'max_path_length': 1000,
                 'irl_model_wt': 1.0,
                 'entropy_weight': 0.1,
                 # paths substantially increase storage requirements
                 'store_paths': False,
+                'step_size': 0.01,
                 #'optimizer_args': {}
             }
             training_kwargs.update(training_cfg)
+            print(training_kwargs)
             algo = IRLRunner(
                 env=envs,
                 policy=policy,
