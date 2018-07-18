@@ -28,9 +28,10 @@ from baselines.common.distributions import make_pdtype
 from baselines.common.input import observation_input
 from baselines.ppo2.policies import nature_cnn
 
-from .environments import VecGymEnv
+from .environments import VecGymEnv, wrap_env_with_args, RewardZeroingEnv, VecIRLRewardEnv
 from .utils import one_hot
-from .policies import EnvPolicy, sample_trajectories
+from .policies import EnvPolicy, sample_trajectories, Policy
+from .training import Learner
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -49,23 +50,30 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             *,
             policy_model,
             envs,
-            sess
+            sess,
+            baseline_wrappers=[]
     ):
         Serializable.quick_init(self, locals())
         assert isinstance(envs.action_space, Box)
         self._dist = Categorical(envs.action_space.shape[0])
 
         baselines_venv = envs._wrapped_env.venv
-        with tf.variable_scope(name) as scope:
-            self.act_model = policy_model(
-                sess,
-                baselines_venv.observation_space,
-                baselines_venv.action_space,
-                None,
-                1,
-                reuse=False
-            )
+        for fn in baseline_wrappers:
+            print("Wrapping baseline with function")
+            baselines_venv = fn(baseline_wrappers)
 
+        with tf.variable_scope(name) as scope:
+            self.learner = Learner(
+                policy_class=policy_model,
+                env=baselines_venv,
+                total_timesteps=10e6,
+                vf_coef=0.5, ent_coef=0.01,
+                nsteps=2048, noptepochs=4, nminibatches=4,
+                gamma=0.99, lam=0.95,
+                lr=lambda alpha: alpha * 2.5e-4,
+                cliprange=lambda alpha: alpha * 0.1
+            )
+            self.act_model = self.learner.model.act_model
             self.scope = scope
 
         StochasticPolicy.__init__(self, envs.spec)
@@ -137,6 +145,9 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             actions, _ = self.get_actions(obs)
             obs, _, dones, _ = venv.step(actions)
             venv.render()
+
+    def train_step(self):
+        self.learner.step()
 
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
@@ -310,6 +321,9 @@ class IRLRunner(IRLTRPO):
         logger.record_tabular("NumTimesteps", sum([len(p['rewards']) for p in paths]))
         return paths
 
+    def optimize_policy(self, itr, samples_data):
+        self.policy.train_step()
+
     def train(self):
         sess = tf.get_default_session()
         sess.run(tf.global_variables_initializer())
@@ -357,7 +371,8 @@ class IRLRunner(IRLTRPO):
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
          tf_cfg, model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
-    envs = VecGymEnv(venv)
+    envs = venv
+    envs = VecGymEnv(envs)
     envs = TfEnv(envs)
     experts = trajectories
     train_graph = tf.Graph()
@@ -374,11 +389,21 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 policy_cfg = policy_config(None)
 
             irl_model = make_irl_model(model_cfg, env_spec=envs.spec, expert_trajs=experts)
-            policy = make_irl_policy(policy_cfg, envs, sess)
 
-            ablation_config = defaultdict(lambda: (1.0, True))
-            ablation_config['train_rl'] = (0.0, False)
-            irl_model_wt, zero_environment_reward = ablation_config[ablation]
+            irl_reward_wrappers = [
+                wrap_env_with_args(RewardZeroingEnv),
+                wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
+            ]
+            ablation_config = defaultdict(lambda: (1.0, True, irl_reward_wrappers))
+            ablation_config['train_rl'] = (0.0, False, [])
+            (
+                irl_model_wt,
+                zero_environment_reward,
+                env_wrappers
+            ) = ablation_config[ablation]
+
+            policy_cfg['baseline_wrappers'] = env_wrappers
+            policy = make_irl_policy(policy_cfg, envs, sess)
 
             training_kwargs = {
                 'n_itr': 1000,

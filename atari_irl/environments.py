@@ -1,5 +1,6 @@
 import pickle
 import numpy as np
+import tensorflow as tf
 from rllab.envs.base import Env
 from rllab.envs.gym_env import convert_gym_space
 from baselines.common.vec_env.vec_normalize import VecNormalize
@@ -63,6 +64,29 @@ class TimeLimitEnv(gym.Wrapper):
             done = True
 
         return f1, f2, done, f3
+
+
+class RewardZeroingEnv(gym.Wrapper):
+    def step(self, actions):
+        _1, reward, _2, _3 = self.env.step(actions)
+        return _1, 0, _2, _3
+
+
+class VecIRLRewardEnv(gym.Wrapper):
+    def __init__(self, env, *, reward_network):
+        gym.Wrapper.__init__(self, env)
+        self.reward_network = reward_network
+        self.prev_obs = None
+
+    def step(self, acts):
+        obs, _, done, info = self.env.step(acts)
+
+        rewards = tf.get_default_session(
+        ).run(self.reward_network.reward, feed_dict={
+            self.reward_network.act_t: acts,
+            self.reward_network.obs_t: obs
+        })
+        return obs, rewards, done, info
 
 
 atari_modifiers = {
