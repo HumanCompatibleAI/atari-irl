@@ -410,7 +410,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 'batch_size': 500,
                 'max_path_length': 100,
                 'irl_model_wt': irl_model_wt,
-                'entropy_weight': 0.1,
+                'entropy_weight': 0.01,
                 # paths substantially increase storage requirements
                 'store_paths': False,
                 'step_size': 0.01,
@@ -430,6 +430,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
             )
 
             with rllab_logdir(algo=algo, dirname=log_dir):
+                print("Training!")
                 algo.train()
 
                 reward_params = irl_model.get_params()
