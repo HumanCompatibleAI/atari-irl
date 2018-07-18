@@ -356,7 +356,7 @@ class IRLRunner(IRLTRPO):
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
-         tf_cfg, model_cfg=None, policy_cfg=None, training_cfg={}):
+         tf_cfg, model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
     envs = VecGymEnv(venv)
     envs = TfEnv(envs)
     experts = trajectories
@@ -378,8 +378,6 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
 
             ablation_config = defaultdict(lambda: (1.0, True))
             ablation_config['train_rl'] = (0.0, False)
-
-            ablation = 'default'
             irl_model_wt, zero_environment_reward = ablation_config[ablation]
 
             training_kwargs = {
