@@ -62,13 +62,15 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             print("Wrapping baseline with function")
             baselines_venv = fn(baseline_wrappers)
 
+        self.baselines_venv = baselines_venv
+
         with tf.variable_scope(name) as scope:
             self.learner = Learner(
                 policy_class=policy_model,
                 env=baselines_venv,
                 total_timesteps=10e6,
                 vf_coef=0.5, ent_coef=0.01,
-                nsteps=2048, noptepochs=4, nminibatches=4,
+                nsteps=128, noptepochs=4, nminibatches=4,
                 gamma=0.99, lam=0.95,
                 lr=lambda alpha: alpha * 2.5e-4,
                 cliprange=lambda alpha: alpha * 0.1
@@ -148,7 +150,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
     def train_step(self):
         self.learner.step()
-
+        self.learner.print_log(self.learner)
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     h = nature_cnn(x, **conv_kwargs)
