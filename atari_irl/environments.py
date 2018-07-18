@@ -173,8 +173,8 @@ class JustPress1Environment(gym.Env):
         self.action_space = gym.spaces.Discrete(6)
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(90, 90, 3))
 
-        self.black = np.zeros(self.observation_space.shape)
-        self.white = np.ones(self.observation_space.shape) * 255
+        self.black = np.zeros(self.observation_space.shape).astype(np.uint8)
+        self.white = np.ones(self.observation_space.shape).astype(np.uint8) * 255
         
         self.random_seed = 0
         self.np_random = np.random.RandomState(0)
