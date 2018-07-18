@@ -19,7 +19,7 @@ def add_bool_feature(parser, name):
 
 def add_atari_args(parser):
     # see baselines.common.cmd_util
-    parser.add_argument('--env', help='environment ID', default='PongNoFrameskip-v0')
+    parser.add_argument('--env', help='environment ID', default='PongNoFrameskip-v4')
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num_timesteps', type=int, default=int(10e6))
     parser.add_argument('--num_envs', type=int, default=8)
