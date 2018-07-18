@@ -60,7 +60,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         baselines_venv = envs._wrapped_env.venv
         for fn in baseline_wrappers:
             print("Wrapping baseline with function")
-            baselines_venv = fn(baseline_wrappers)
+            baselines_venv = fn(baselines_venv)
 
         self.baselines_venv = baselines_venv
 
