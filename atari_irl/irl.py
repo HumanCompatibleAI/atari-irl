@@ -307,7 +307,7 @@ class IRLRunner(IRLTRPO):
 
         logger.record_tabular("PointsGained", poss)
         logger.record_tabular("PointsLost", negs)
-
+        logger.record_tabular("NumTimesteps", sum([len(p['rewards']) for p in paths]))
         return paths
 
     def train(self):
