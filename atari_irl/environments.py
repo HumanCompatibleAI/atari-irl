@@ -171,14 +171,19 @@ class JustPress1Environment(gym.Env):
         super().__init__()
         self.reward_range = (0, 1)
         self.action_space = gym.spaces.Discrete(6)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(90, 90, 3))
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(210, 160, 3))
 
         self.black = np.zeros(self.observation_space.shape).astype(np.uint8)
         self.white = np.ones(self.observation_space.shape).astype(np.uint8) * 255
         
         self.random_seed = 0
         self.np_random = np.random.RandomState(0)
-        
+
+        class Ale:
+            def lives(self):
+                return 1
+        self.ale = Ale()
+
     def seed(self, seed=None):
         if seed is None:
             seed = 0
@@ -219,9 +224,16 @@ class SimonSaysEnvironment(JustPress1Environment):
         self.turns += 1
         return self.turns > 100
 
+    @staticmethod
+    def isint(n):
+        return isinstance(n, np.int64) or isinstance(n, int)
+
     def step(self, action):
         reward = 0.0
-        if isinstance(action, np.int64) and action == self.next_move or not isinstance(action, np.int64) and action[0] == self.next_move:
+        if (
+            self.isint(action) and action == self.next_move or
+            not self.isint(action) and action[0] == self.next_move
+        ):
             reward = 1.0
         obs = self.reset()
         return obs, reward, self.is_done(), {'next_move': self.next_move}
@@ -235,8 +247,8 @@ class SimonSaysEnvironment(JustPress1Environment):
 class VisionSaysEnvironment(SimonSaysEnvironment):
     def __init__(self):
         super().__init__()
-        self.zero = np.zeros(self.observation_space.shape)
-        self.one = np.zeros(self.observation_space.shape)
+        self.zero = np.zeros(self.observation_space.shape).astype(np.uint8)
+        self.one = np.zeros(self.observation_space.shape).astype(np.uint8)
 
         self.zero[3, 2:7, :] = 255
         self.zero[5, 2:7, :] = 255
