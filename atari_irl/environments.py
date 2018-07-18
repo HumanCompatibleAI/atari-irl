@@ -70,7 +70,7 @@ atari_modifiers = {
         wrap_env_with_args(NoopResetEnv, noop_max=30),
         wrap_env_with_args(MaxAndSkipEnv, skip=4),
         wrap_deepmind,
-        wrap_env_with_args(TimeLimitEnv, time_limit=1000)
+        wrap_env_with_args(TimeLimitEnv, time_limit=500)
     ],
     'vec_env_modifiers': [
         wrap_env_with_args(VecFrameStack, nstack=4)
