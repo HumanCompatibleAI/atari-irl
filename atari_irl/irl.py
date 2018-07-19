@@ -327,7 +327,7 @@ def make_irl_policy(policy_cfg, envs, sess):
     )
 
 
-def irl_model_config(args):
+def reward_model_config(args):
     return {
         'model': AtariAIRL,
         'state_only': False,
@@ -367,7 +367,7 @@ class IRLRunner(IRLTRPO):
         args = data['cmd_line_args']
 
         policy = make_irl_policy(policy_config(args), envs, sess)
-        irl_model = make_irl_model(irl_model_config(args), env_spec=envs.spec, expert_trajs=expert_trajs)
+        irl_model = make_irl_model(reward_model_config(args), env_spec=envs.spec, expert_trajs=expert_trajs)
 
         policy.restore_param_values(data['policy_params'])
         irl_model.set_params(data['irl_params'])
@@ -436,7 +436,7 @@ class IRLRunner(IRLTRPO):
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
-         tf_cfg, model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
+         tf_cfg, reward_model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
     envs = venv
     envs = VecGymEnv(envs)
     envs = TfEnv(envs)
@@ -449,12 +449,12 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
         #sess = tf_debug.LocalCLIDebugWrapperSession(sess , ui_type='readline')
         with sess.as_default():
             tf.set_random_seed(seed)
-            if model_cfg is None:
-                model_cfg = irl_model_config(None)
+            if reward_model_cfg is None:
+                reward_model_cfg = reward_model_config(None)
             if policy_cfg is None:
                 policy_cfg = policy_config(None)
 
-            irl_model = make_irl_model(model_cfg, env_spec=envs.spec, expert_trajs=experts)
+            irl_model = make_irl_model(reward_model_cfg, env_spec=envs.spec, expert_trajs=experts)
 
             irl_reward_wrappers = [
                 wrap_env_with_args(VecRewardZeroingEnv),
@@ -511,5 +511,5 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 # since parameters in policy will not survive across tf sessions.
                 policy_params = policy.tensor_values()
 
-    reward = model_cfg, reward_params
+    reward = reward_model_cfg, reward_params
     return reward, policy_params
