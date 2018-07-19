@@ -120,6 +120,16 @@ class VecOneHotEncodingEnv(VecEnvWrapper):
     def step_wait(self):
         self.venv.step_wait()
 
+easy_env_modifiers = {
+    'env_modifiers': [
+        wrap_deepmind,
+        wrap_env_with_args(TimeLimitEnv, time_limit=5000),
+        wrap_env_with_args(OneHotDecodingEnv)
+    ],
+    'vec_env_modifiers': [
+        wrap_env_with_args(VecFrameStack, nstack=4)
+    ]
+}
 
 atari_modifiers = {
     'env_modifiers': [
@@ -275,29 +285,29 @@ class SimonSaysEnvironment(JustPress1Environment):
             1: self.white
         }
         self.turns = 0
-        
-    def is_done(self):
-        self.turns += 1
-        return self.turns > 100
 
     @staticmethod
     def isint(n):
         return isinstance(n, np.int64) or isinstance(n, int)
 
+    def set_next_move_get_obs(self):
+        self.next_move = self.np_random.randint(2)
+        return self.obs_map[self.next_move]
+
     def step(self, action):
         reward = 0.0
+        self.turns += 1
         if (
             self.isint(action) and action == self.next_move or
             not self.isint(action) and action[0] == self.next_move
         ):
             reward = 1.0
-        obs = self.reset()
-        return obs, reward, self.is_done(), {'next_move': self.next_move}
+        obs = self.set_next_move_get_obs()
+        return obs, reward, self.turns >= 100, {'next_move': self.next_move}
 
     def reset(self):
         self.turns = 0
-        self.next_move = self.np_random.randint(2)
-        return self.obs_map[self.next_move]
+        return self.set_next_move_get_obs()
 
 
 class VisionSaysEnvironment(SimonSaysEnvironment):
@@ -315,3 +325,21 @@ class VisionSaysEnvironment(SimonSaysEnvironment):
             0: self.zero,
             1: self.one
         }
+
+
+gym.envs.register(
+    id='VisionSays-v0',
+    entry_point='atari_irl.environments:VisionSaysEnvironment'
+)
+
+gym.envs.register(
+    id='SimonSays-v0',
+    etnry_point='atari_irl.environments:SimonSaysEnvironment'
+)
+
+env_mapping = {
+    'PongNoFrameskip-v4': one_hot_atari_modifiers,
+    'CartPole-v1': mujoco_modifiers,
+    'VisionSays-v0': easy_env_modifiers,
+    'SimonSays-v0': easy_env_modifiers
+}
