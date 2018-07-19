@@ -220,7 +220,7 @@ def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     h = nature_cnn(x, **conv_kwargs)
     if actions is not None:
         # Actions must be one-hot coded, otherwise this won't make any sense
-        h = tf.concat(h, actions, axis=1)
+        h = tf.concat([h, actions], axis=1)
     h2 = tf.nn.relu(fc(h, 'action_state_vec', nh=20, init_scale=np.sqrt(2)))
     output = fc(h2, 'output', nh=dout, init_scale=np.sqrt(2))
     return output
@@ -279,11 +279,12 @@ class AtariAIRL(AIRL):
             with tf.variable_scope('discrim') as dvs:
                 rew_input = self.obs_t
                 with tf.variable_scope('reward'):
-                    if not self.state_only:
+                    if self.state_only:
                         self.reward = reward_arch(
                             rew_input, dout=1, **reward_arch_args
                         )
                     else:
+                        print("Not state only", self.act_t)
                         self.reward = reward_arch(
                             rew_input, actions=self.act_t,
                             dout=1, **reward_arch_args
