@@ -3,12 +3,14 @@ import numpy as np
 import tensorflow as tf
 from rllab.envs.base import Env
 from rllab.envs.gym_env import convert_gym_space
+from baselines.common.vec_env import VecEnvWrapper
 from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.atari_wrappers import NoopResetEnv, MaxAndSkipEnv, wrap_deepmind
 from gym.spaces.discrete import Discrete
 from sandbox.rocky.tf.spaces import Box
 import gym
+from atari_irl.utils import one_hot
 
 def vec_normalize(env):
     return VecNormalize(env)
@@ -66,27 +68,57 @@ class TimeLimitEnv(gym.Wrapper):
         return f1, f2, done, f3
 
 
-class RewardZeroingEnv(gym.Wrapper):
+class VecRewardZeroingEnv(VecEnvWrapper):
     def step(self, actions):
-        _1, reward, _2, _3 = self.env.step(actions)
+        _1, reward, _2, _3 = self.venv.step(actions)
         return _1, 0, _2, _3
 
+    def reset(self):
+        return self.venv.reset()
 
-class VecIRLRewardEnv(gym.Wrapper):
+    def step_wait(self):
+        self.venv.step_wait()
+
+
+class VecIRLRewardEnv(VecEnvWrapper):
     def __init__(self, env, *, reward_network):
-        gym.Wrapper.__init__(self, env)
+        VecEnvWrapper.__init__(self, env)
         self.reward_network = reward_network
         self.prev_obs = None
 
     def step(self, acts):
-        obs, _, done, info = self.env.step(acts)
+        obs, _, done, info = self.venv.step(acts)
+
+        assert np.sum(_) == 0
 
         rewards = tf.get_default_session(
         ).run(self.reward_network.reward, feed_dict={
             self.reward_network.act_t: acts,
             self.reward_network.obs_t: obs
         })
-        return obs, rewards, done, info
+        assert len(rewards) == len(obs)
+        return obs, rewards.reshape(rewards.shape[0]), done, info
+
+    def reset(self):
+        return self.venv.reset()
+
+    def step_wait(self):
+        self.venv.step_wait()
+
+
+class VecOneHotEncodingEnv(VecEnvWrapper):
+    def __init__(self, venv, dim=6):
+        VecEnvWrapper.__init__(self, venv)
+        self.dim = dim
+
+    def step(self, actions):
+        return self.venv.step(one_hot(actions, self.dim))
+
+    def reset(self):
+        return self.venv.reset()
+
+    def step_wait(self):
+        self.venv.step_wait()
 
 
 atari_modifiers = {

@@ -28,10 +28,10 @@ from baselines.common.distributions import make_pdtype
 from baselines.common.input import observation_input
 from baselines.ppo2.policies import nature_cnn
 
-from .environments import VecGymEnv, wrap_env_with_args, RewardZeroingEnv, VecIRLRewardEnv
+from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
 from .utils import one_hot
 from .policies import EnvPolicy, sample_trajectories, Policy
-from .training import Learner
+from .training import Learner, safemean
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -58,11 +58,12 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         self._dist = Categorical(envs.action_space.shape[0])
 
         baselines_venv = envs._wrapped_env.venv
-        for fn in baseline_wrappers:
+        for fn in baseline_wrappers + [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]:
             print("Wrapping baseline with function")
             baselines_venv = fn(baselines_venv)
 
         self.baselines_venv = baselines_venv
+        print("Environment: ", self.baselines_venv)
 
         with tf.variable_scope(name) as scope:
             self.learner = Learner(
@@ -105,9 +106,70 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         # TODO(Aaron) get the real dim
         return one_hot(action, 6), dict(prob=self._f_dist(obs))
 
+    def _get_actions_right_shape(self, observations):
+        return (
+            one_hot(self.act_model.step(observations)[0], 6),
+            dict(prob=self._f_dist(observations))
+        )
+
     def get_actions(self, observations):
-        actions, _, _, _ = self.act_model.step(observations)
-        return one_hot(actions, 6), dict(prob=self._f_dist(observations))
+        """
+
+        Args:
+            observations:
+
+        Returns:
+
+        """
+        N = observations.shape[0]
+        batch_size = self.act_model.X.shape[0].value
+
+        # Things get super slow if we don't do this
+        if N == batch_size:
+            return self._get_actions_right_shape(observations)
+
+        actions = []
+        probs = []
+        obs = []
+        start = 0
+
+        def add_observation_batch(obs_batch, subslice=None):
+            batch_actions, batch_probs = self._get_actions_right_shape(
+                obs_batch
+            )
+
+            if subslice:
+                batch_actions = batch_actions[subslice]
+                batch_probs = {'prob': batch_probs['prob'][subslice]}
+                obs_batch = obs_batch[subslice]
+
+            actions.append(batch_actions)
+            probs.append(batch_probs)
+            obs.append(obs_batch)
+
+        for start in range(0, N-batch_size, batch_size):
+            end = start + batch_size
+            add_observation_batch(observations[start:end])
+
+        start += batch_size
+        if start != N:
+            remainder_slice = slice(start - N, batch_size)
+            add_observation_batch(
+                observations[N-batch_size:N],
+                subslice=remainder_slice
+            )
+
+        # Note: If we change the shape a bunch this will make us sad
+        final_actions = np.vstack(actions)
+        final_probs = np.vstack([p['prob'] for p in probs])
+        final_obs = np.vstack(obs)
+
+        # Integrity checks in case I wrecked this
+        assert len(final_actions) == N
+        assert len(final_probs) == N
+        assert np.isclose(final_obs, observations).all()
+
+        return final_actions, dict(prob=final_probs)
 
     def get_params_internal(self, **tags):
         return self.scope.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
@@ -149,8 +211,10 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             venv.render()
 
     def train_step(self):
-        self.learner.step()
-        self.learner.print_log(self.learner)
+        for i in range(30):
+            if i % 10 == 0:
+                print(i, safemean([epinfo['r'] for epinfo in self.learner._epinfobuf]))
+            self.learner.step()
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     h = nature_cnn(x, **conv_kwargs)
@@ -393,7 +457,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
             irl_model = make_irl_model(model_cfg, env_spec=envs.spec, expert_trajs=experts)
 
             irl_reward_wrappers = [
-                wrap_env_with_args(RewardZeroingEnv),
+                wrap_env_with_args(VecRewardZeroingEnv),
                 wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
             ]
             ablation_config = defaultdict(lambda: (1.0, True, irl_reward_wrappers))
@@ -420,6 +484,12 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
             }
             training_kwargs.update(training_cfg)
             print(training_kwargs)
+            print(
+                irl_model_wt,
+                zero_environment_reward,
+                env_wrappers
+            )
+
             algo = IRLRunner(
                 env=envs,
                 policy=policy,
