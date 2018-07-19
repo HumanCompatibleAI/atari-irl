@@ -334,7 +334,7 @@ gym.envs.register(
 
 gym.envs.register(
     id='SimonSays-v0',
-    etnry_point='atari_irl.environments:SimonSaysEnvironment'
+    entry_point='atari_irl.environments:SimonSaysEnvironment'
 )
 
 env_mapping = {
