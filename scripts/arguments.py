@@ -1,14 +1,6 @@
 #from atari_irl import utils, environments, training, policies, irl
+from atari_irl import utils, environments
 
-import os.path as osp
-import os
-import argparse
-#
-#
-#
-#import pickle
-
-EXPERT_POLICY_FILENAME_ARG = '--expert_path'
 
 def add_bool_feature(parser, name):
     feature_parser = parser.add_mutually_exclusive_group(required=False)
@@ -41,6 +33,14 @@ def add_trajectory_args(parser):
     )
 
 
+def add_expert_args(parser):
+    parser.add_argument(
+        '--expert_path',
+        help='file for the expert policy',
+        default='experts/new_expert'
+    )
+
+
 def add_irl_args(parser):
     parser.add_argument('--irl_seed', help='seed for the IRL tensorflow session', type=int, default=0)
     parser.add_argument(
@@ -48,15 +48,40 @@ def add_irl_args(parser):
         help='filename for the IRL policy',
         default='irl_policy_params.pkl'
     )
+    parser.add_argument(
+        '--irl_reward_file',
+        help='filename for the IRL reward',
+        default='irl_reward.pkl'
+    )
     parser.add_argument('--discount', help='discount rate for the IRL policy', default=.99)
     parser.add_argument(
         '--n_iter',
         help='number of iterations for irl training',
         type=int, default=500
     )
+    parser.add_argument(
+        '--batch_size',
+        help='batch size for each iteration',
+        type=int, default=5000
+    )
+    parser.add_argument(
+        '--ablation',
+        help='what ablation to run',
+        choices=['none', 'train_rl'],
+        type=str, default='none'
+    )
 
 
+def env_context_for_args(args):
+    return utils.EnvironmentContext(
+        env_name=args.env,
+        n_envs=args.num_envs,
+        seed=args.seed,
+        **environments.env_mapping[args.env]
+    )
 
 
-
-
+def tf_context_for_args(args):
+    return utils.TfContext(
+        ncpu=args.n_cpu
+    )

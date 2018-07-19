@@ -1,19 +1,14 @@
 from atari_irl import utils, environments, irl
 import pickle
-from arguments import add_atari_args, add_trajectory_args, add_irl_args
+from arguments import add_atari_args, add_trajectory_args, add_irl_args, tf_context_for_args, env_context_for_args
 import argparse
 import tensorflow as tf
 from sandbox.rocky.tf.envs.base import TfEnv
 
 
 def run_irl_policy(args):
-    with utils.TfContext():
-        with utils.EnvironmentContext(
-                env_name=args.env,
-                n_envs=args.num_envs,
-                seed=args.seed,
-                **environments.one_hot_atari_modifiers
-        ) as context:
+    with tf_context_for_args(args):
+        with env_context_for_args(args) as context:
             envs = environments.VecGymEnv(context.environments)
             envs = TfEnv(envs)
 
