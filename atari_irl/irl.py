@@ -211,10 +211,11 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             venv.render()
 
     def train_step(self):
-        for i in range(30):
-            if i % 10 == 0:
-                print(i, safemean([epinfo['r'] for epinfo in self.learner._epinfobuf]))
-            self.learner.step()
+        #for i in range(30):
+        #    if i % 10 == 0:
+        #        print(i, safemean([epinfo['r'] for epinfo in self.learner._epinfobuf]))
+        self.learner.step()
+
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     h = nature_cnn(x, **conv_kwargs)

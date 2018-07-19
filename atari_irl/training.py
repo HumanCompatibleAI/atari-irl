@@ -170,6 +170,7 @@ class Learner:
         self._tnow = None
         self._fps = None
         self._lossvals = None
+        self._itr = None
 
     @property
     def update(self):
@@ -179,7 +180,16 @@ class Learner:
     def mean_reward(self):
         return safemean([epinfo['r'] for epinfo in self._epinfobuf])
 
-    def step(self):
+    def obtain_samples(self, itr):
+        # Run the model on the environments
+        self._run_info = RunInfo(*self.runner.run())
+        self._epinfobuf.extend(self._run_info.epinfos)
+        self._itr = itr
+        #import pdb; pdb.set_trace()
+
+    def optimize_policy(self, itr):
+        assert self._itr == itr
+
         # initialize our start time if we haven't already
         if not self._tfirststart:
            self._tfirststart = time.time()
@@ -192,9 +202,7 @@ class Learner:
         lrnow = self.lr(frac)
         cliprangenow = self.cliprange(frac)
 
-        # Run the model on the environments
-        self._run_info = RunInfo(*self.runner.run())
-        self._epinfobuf.extend(self._run_info.epinfos)
+
 
         # Run the training steps for PPO
         mblossvals = train_steps(
@@ -217,6 +225,10 @@ class Learner:
         self._update += 1
         if self._update > self.nupdates:
             logger.log("Warning, exceeded planned number of updates")
+
+    def step(self):
+        self.obtain_samples(self._update)
+        self.optimize_policy(self._update)
 
     def register_callback(self, check, fn):
         self.callbacks.append((check, fn))
