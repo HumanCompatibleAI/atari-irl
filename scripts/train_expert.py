@@ -51,4 +51,6 @@ if __name__ == '__main__':
     add_atari_args(parser)
     add_expert_args(parser)
     args = parser.parse_args()
+
+    assert not args.one_hot_code
     train_expert(args)

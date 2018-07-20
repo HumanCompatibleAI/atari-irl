@@ -123,8 +123,7 @@ class VecOneHotEncodingEnv(VecEnvWrapper):
 easy_env_modifiers = {
     'env_modifiers': [
         wrap_deepmind,
-        wrap_env_with_args(TimeLimitEnv, time_limit=5000),
-        wrap_env_with_args(OneHotDecodingEnv)
+        wrap_env_with_args(TimeLimitEnv, time_limit=5000)
     ],
     'vec_env_modifiers': [
         wrap_env_with_args(VecFrameStack, nstack=4)
@@ -144,12 +143,13 @@ atari_modifiers = {
 }
 
 
-one_hot_atari_modifiers = {
-    'env_modifiers': atari_modifiers['env_modifiers'] + [
-        wrap_env_with_args(OneHotDecodingEnv)
-    ],
-    'vec_env_modifiers': atari_modifiers['vec_env_modifiers']
-}
+def one_hot_wrap_modifiers(modifiers):
+    return {
+        'env_modifiers': modifiers['env_modifiers'] + [
+            wrap_env_with_args(OneHotDecodingEnv)
+        ],
+        'vec_env_modifiers': modifiers['vec_env_modifiers']
+    }
 
 
 class ConstantStatistics(object):
@@ -316,14 +316,16 @@ class VisionSaysEnvironment(SimonSaysEnvironment):
         self.zero = np.zeros(self.observation_space.shape).astype(np.uint8)
         self.one = np.zeros(self.observation_space.shape).astype(np.uint8)
 
-        self.zero[3, 2:7, :] = 255
-        self.zero[5, 2:7, :] = 255
-        self.zero[4, 2, :] = 255
-        self.zero[4, 6, :] = 255
+        self.one[50:150, 120:128, :] = 255
+
+        self.zero[50:150, 100:108, :] = 255
+        self.zero[50:150, 140:148, :] = 255
+        self.zero[50:58, 100:148, :] = 255
+        self.zero[142:150, 100:148, :] = 255
 
         self.obs_map = {
-            0: self.zero,
-            1: self.one
+            0: self.one,
+            1: self.zero
         }
 
 
@@ -338,7 +340,7 @@ gym.envs.register(
 )
 
 env_mapping = {
-    'PongNoFrameskip-v4': one_hot_atari_modifiers,
+    'PongNoFrameskip-v4': atari_modifiers,
     'CartPole-v1': mujoco_modifiers,
     'VisionSays-v0': easy_env_modifiers,
     'SimonSays-v0': easy_env_modifiers

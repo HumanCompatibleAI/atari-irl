@@ -13,6 +13,8 @@ def train_airl(args):
         device_count={'GPU': 1},
         log_device_placement=True
     )
+    tf_cfg.gpu_options.allow_growth = True
+
     import pickle
     ts = pickle.load(open(args.trajectories_file, 'rb'))
 
@@ -21,7 +23,11 @@ def train_airl(args):
         reward, policy_params = irl.airl(
             context.environments, ts, args.discount, args.irl_seed, logger.get_dir(),
             tf_cfg=tf_cfg,
-            training_cfg={'n_itr': args.n_iter, 'batch_size': args.n_iter},
+            training_cfg={
+                'n_itr': args.n_iter,
+                'batch_size': args.batch_size,
+                'entropy_weight': args.entropy_wt
+            },
             policy_cfg=irl.policy_config(args),
             reward_model_cfg=irl.reward_model_config(args),
             ablation=args.ablation

@@ -12,25 +12,22 @@ def add_bool_feature(parser, name):
 def add_atari_args(parser):
     # see baselines.common.cmd_util
     parser.add_argument('--env', help='environment ID', default='PongNoFrameskip-v4')
+    parser.add_argument('--n_cpu', help='Number of CPUs', default=8)
     parser.add_argument('--seed', help='RNG seed', type=int, default=0)
     parser.add_argument('--num_timesteps', type=int, default=int(10e6))
     parser.add_argument('--num_envs', type=int, default=8)
     parser.add_argument('--policy_type', default='cnn')
+    add_bool_feature(parser, 'one_hot_code')
 
 
 def add_trajectory_args(parser):
-    parser.add_argument('--n_cpu', help='Number of CPUs', default=8)
     parser.add_argument('--num_trajectories', help='number of trajectories', type=int, default=8)
-    parser.add_argument(
-        '--one_hot_code',
-        help='Whether or not to one hot code the actions',
-        type=bool, default=True
-    )
     parser.add_argument(
         '--trajectories_file',
         help='file to write the trajectories to',
         default='trajectories.pkl'
     )
+    add_bool_feature(parser, 'render')
 
 
 def add_expert_args(parser):
@@ -70,14 +67,23 @@ def add_irl_args(parser):
         choices=['none', 'train_rl'],
         type=str, default='none'
     )
+    parser.add_argument(
+        '--entropy_wt',
+        help='entropy_weight',
+        type=float, default=0.01
+    )
 
 
 def env_context_for_args(args):
+    env_modifiers = environments.env_mapping[args.env]
+    if args.one_hot_code:
+        env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
+
     return utils.EnvironmentContext(
         env_name=args.env,
         n_envs=args.num_envs,
         seed=args.seed,
-        **environments.env_mapping[args.env]
+        **env_modifiers
     )
 
 
