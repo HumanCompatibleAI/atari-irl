@@ -113,14 +113,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         )
 
     def get_actions(self, observations):
-        """
-
-        Args:
-            observations:
-
-        Returns:
-
-        """
         N = observations.shape[0]
         batch_size = self.act_model.X.shape[0].value
 
@@ -211,9 +203,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             venv.render()
 
     def train_step(self):
-        #for i in range(30):
-        #    if i % 10 == 0:
-        #        print(i, safemean([epinfo['r'] for epinfo in self.learner._epinfobuf]))
         self.learner.step()
         self.learner.print_log(self.learner)
 

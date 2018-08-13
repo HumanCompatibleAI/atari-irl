@@ -202,8 +202,6 @@ class Learner:
         lrnow = self.lr(frac)
         cliprangenow = self.cliprange(frac)
 
-
-
         # Run the training steps for PPO
         mblossvals = train_steps(
             model=self.policy.model,
