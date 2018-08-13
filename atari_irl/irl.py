@@ -485,9 +485,28 @@ def get_ablation_modifiers(*, irl_model, ablation):
     return training_kwarg_modifiers, policy_cfg_modifiers
 
 
+def training_config(
+        *,
+        n_itr=1000,
+        discount=0.99,
+        batch_size=500,
+        max_path_length=100,
+        entropy_weight=0.01,
+        step_size=0.01
+):
+    return {
+        'n_itr': n_itr,
+        'discount': discount,
+        'batch_size': batch_size,
+        'max_path_length': max_path_length,
+        'entropy_weight': entropy_weight,
+        'step_size': step_size
+    }
+
+
 def get_training_kwargs(
         *,
-        venv, irl_context, discount,
+        venv, irl_context,
         reward_model_cfg, policy_cfg, training_cfg,
         expert_trajectories, ablation
 ):
@@ -512,17 +531,14 @@ def get_training_kwargs(
     policy_cfg.update(ablation_policy_modifiers)
     policy = make_irl_policy(policy_cfg, envs, irl_context.sess)
 
+    if training_cfg is None:
+        training_cfg = training_config()
+
     training_kwargs = dict(
         env=envs,
         policy=policy,
         irl_model=irl_model,
         sampler_args=dict(n_envs=venv.num_envs),
-        n_itr=1000,
-        discount=discount,
-        batch_size=500,
-        max_path_length=100,
-        entropy_weight=0.01,
-        step_size=0.01,
         # paths substantially increase storage requirements
         store_paths=False,
         baseline=ZeroBaseline(env_spec=envs.spec),
@@ -541,7 +557,6 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
         training_kwargs = get_training_kwargs(
             venv=venv,
             irl_context=irl_context,
-            discount=discount,
             reward_model_cfg=reward_model_cfg,
             policy_cfg=policy_cfg,
             training_cfg=training_cfg,
