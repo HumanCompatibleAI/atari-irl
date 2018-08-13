@@ -439,6 +439,27 @@ class IRLRunner(IRLTRPO):
         return
 
 
+class IRLContext:
+    def __init__(self, tf_cfg, seed=0):
+        self.tf_cfg = tf_cfg
+        self.seed = seed
+
+    def __enter__(self):
+        self.train_graph = tf.Graph()
+        self.tg_context = self.train_graph.as_default()
+        self.tg_context.__enter__()
+        self.sess = tf.Session(config=self.tf_cfg)
+        # from tensorflow.python import debug as tf_debug
+        # sess = tf_debug.LocalCLIDebugWrapperSession(sess , ui_type='readline')
+        self.sess_context = self.sess.as_default()
+        self.sess_context.__enter__()
+        tf.set_random_seed(self.seed)
+
+    def __exit__(self, *args):
+        self.sess_context.__exit__(*args)
+        self.tg_context.__exit__(*args)
+
+
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
          tf_cfg, reward_model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
@@ -446,75 +467,69 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
     envs = VecGymEnv(envs)
     envs = TfEnv(envs)
     experts = trajectories
-    train_graph = tf.Graph()
-    with train_graph.as_default():
-        sess = tf.Session(config=tf_cfg)
-        print(sess)
-        # from tensorflow.python import debug as tf_debug
-        #sess = tf_debug.LocalCLIDebugWrapperSession(sess , ui_type='readline')
-        with sess.as_default():
-            tf.set_random_seed(seed)
-            if reward_model_cfg is None:
-                reward_model_cfg = reward_model_config(None)
-            if policy_cfg is None:
-                policy_cfg = policy_config(None)
 
-            irl_model = make_irl_model(reward_model_cfg, env_spec=envs.spec, expert_trajs=experts)
+    with IRLContext(tf_cfg) as irl_context:
+        if reward_model_cfg is None:
+            reward_model_cfg = reward_model_config(None)
+        if policy_cfg is None:
+            policy_cfg = policy_config(None)
 
-            irl_reward_wrappers = [
-                wrap_env_with_args(VecRewardZeroingEnv),
-                wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
-            ]
-            ablation_config = defaultdict(lambda: (1.0, True, irl_reward_wrappers))
-            ablation_config['train_rl'] = (0.0, False, [])
-            (
-                irl_model_wt,
-                zero_environment_reward,
-                env_wrappers
-            ) = ablation_config[ablation]
+        irl_model = make_irl_model(reward_model_cfg, env_spec=envs.spec, expert_trajs=experts)
 
-            policy_cfg['baseline_wrappers'] = env_wrappers
-            policy = make_irl_policy(policy_cfg, envs, sess)
+        irl_reward_wrappers = [
+            wrap_env_with_args(VecRewardZeroingEnv),
+            wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
+        ]
+        ablation_config = defaultdict(lambda: (1.0, True, irl_reward_wrappers))
+        ablation_config['train_rl'] = (0.0, False, [])
+        (
+            irl_model_wt,
+            zero_environment_reward,
+            env_wrappers
+        ) = ablation_config[ablation]
 
-            training_kwargs = {
-                'n_itr': 1000,
-                'batch_size': 500,
-                'max_path_length': 100,
-                'irl_model_wt': irl_model_wt,
-                'entropy_weight': 0.01,
-                # paths substantially increase storage requirements
-                'store_paths': False,
-                'step_size': 0.01,
-                #'optimizer_args': {}
-            }
-            training_kwargs.update(training_cfg)
-            print("Training arguments: ", training_kwargs)
-            print(
-                irl_model_wt,
-                zero_environment_reward,
-                env_wrappers
-            )
+        policy_cfg['baseline_wrappers'] = env_wrappers
+        policy = make_irl_policy(policy_cfg, envs, irl_context.sess)
 
-            algo = IRLRunner(
-                env=envs,
-                policy=policy,
-                irl_model=irl_model,
-                discount=discount,
-                sampler_args=dict(n_envs=venv.num_envs),
-                zero_environment_reward=zero_environment_reward,
-                baseline=ZeroBaseline(env_spec=envs.spec),
-                **training_kwargs
-            )
+        training_kwargs = {
+            'n_itr': 1000,
+            'batch_size': 500,
+            'max_path_length': 100,
+            'irl_model_wt': irl_model_wt,
+            'entropy_weight': 0.01,
+            # paths substantially increase storage requirements
+            'store_paths': False,
+            'step_size': 0.01,
+            #'optimizer_args': {}
+        }
+        training_kwargs.update(training_cfg)
+        print("Training arguments: ", training_kwargs)
+        print(
+            irl_model_wt,
+            zero_environment_reward,
+            env_wrappers
+        )
 
-            with rllab_logdir(algo=algo, dirname=log_dir):
-                print("Training!")
-                algo.train()
+        algo = IRLRunner(
+            env=envs,
+            policy=policy,
+            irl_model=irl_model,
+            discount=discount,
+            sampler_args=dict(n_envs=venv.num_envs),
+            zero_environment_reward=zero_environment_reward,
+            baseline=ZeroBaseline(env_spec=envs.spec),
+            **training_kwargs
+        )
 
-                reward_params = irl_model.get_params()
+        with rllab_logdir(algo=algo, dirname=log_dir):
+            print("Training!")
+            algo.train()
 
-                # Must pickle policy rather than returning it directly,
-                # since parameters in policy will not survive across tf sessions.
-                policy_params = policy.tensor_values()
+            reward_params = irl_model.get_params()
+
+            # Must pickle policy rather than returning it directly,
+            # since parameters in policy will not survive across tf sessions.
+            policy_params = policy.tensor_values()
 
     reward = reward_model_cfg, reward_params
     return reward, policy_params
