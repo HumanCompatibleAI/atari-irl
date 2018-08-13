@@ -468,7 +468,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
     envs = TfEnv(envs)
     experts = trajectories
 
-    with IRLContext(tf_cfg) as irl_context:
+    with IRLContext(tf_cfg, seed=seed) as irl_context:
         if reward_model_cfg is None:
             reward_model_cfg = reward_model_config()
 
