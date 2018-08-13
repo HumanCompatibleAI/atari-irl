@@ -455,6 +455,8 @@ class IRLContext:
         self.sess_context.__enter__()
         tf.set_random_seed(self.seed)
 
+        return self
+
     def __exit__(self, *args):
         self.sess_context.__exit__(*args)
         self.tg_context.__exit__(*args)
