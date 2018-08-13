@@ -313,7 +313,7 @@ class AtariAIRL(AIRL):
             self._make_param_ops(_vs)
 
 
-def policy_config(args):
+def policy_config():
     return {
         'policy': DiscreteIRLPolicy,
         'policy_model': CnnPolicy
@@ -330,7 +330,7 @@ def make_irl_policy(policy_cfg, envs, sess):
     )
 
 
-def reward_model_config(args):
+def reward_model_config():
     return {
         'model': AtariAIRL,
         'state_only': False,
@@ -470,9 +470,9 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
 
     with IRLContext(tf_cfg) as irl_context:
         if reward_model_cfg is None:
-            reward_model_cfg = reward_model_config(None)
+            reward_model_cfg = reward_model_config()
         if policy_cfg is None:
-            policy_cfg = policy_config(None)
+            policy_cfg = policy_config()
 
         irl_model = make_irl_model(reward_model_cfg, env_spec=envs.spec, expert_trajs=experts)
 
