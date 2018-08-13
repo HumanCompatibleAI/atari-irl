@@ -44,6 +44,19 @@ from tensorflow.python import debug as tf_debug
 
 
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
+    """
+    This lets us wrap our PPO + old training code to almost fit into the
+    the IRLBatchPolOpt framework. Unfortunately, it currently conflates a few
+    things because of a bunch of shape issues between MuJoCo environments and
+    Atari environments.
+    - It has some of the responsibilities of the Sampler
+    - It has some of the responsibilities of the Policy
+    - It has some of the responsibilities of the RLAlgorithm
+
+    The good news is that the IRL code doesn't actually look at any of the
+    shapes, so we should be able to move back to the actual IRLBatchPolOpt
+    interface by breaking some things out.
+    """
     def __init__(
             self,
             name,
@@ -219,6 +232,8 @@ def cnn_net(x, actions=None, dout=1, **conv_kwargs):
 
 class AtariAIRL(AIRL):
     """
+    This actually fits the AIRL interface! Yay!
+
     Args:
         fusion (bool): Use trajectories from old iterations to train.
         state_only (bool): Fix the learned reward to only depend on state.
@@ -340,6 +355,12 @@ def make_irl_model(model_cfg, *, env_spec, expert_trajs):
 
 
 class IRLRunner(IRLTRPO):
+    """
+    This takes over the IRLTRPO code, to actually run IRL. Right now it has a
+    few issues...
+    [ ] It doesn't share the sample buffer between the discriminator and policy
+    [ ] It doesn't work on MuJoCo
+    """
     def __init__(self, *args, cmd_line_args=None, **kwargs):
         IRLTRPO.__init__(self, *args, **kwargs)
         self.cmd_line_args = cmd_line_args
