@@ -553,8 +553,12 @@ def get_training_kwargs(
 
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
-def airl(venv, trajectories, discount, seed, log_dir, *,
-         tf_cfg, reward_model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
+def airl(
+        venv, trajectories, seed, log_dir,
+        *,
+        tf_cfg, reward_model_cfg=None, policy_cfg=None, training_cfg=None,
+        ablation='normal'
+):
     with IRLContext(tf_cfg, seed=seed) as irl_context:
         training_kwargs = get_training_kwargs(
             venv=venv,
