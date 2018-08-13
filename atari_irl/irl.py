@@ -471,8 +471,6 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
     with IRLContext(tf_cfg) as irl_context:
         if reward_model_cfg is None:
             reward_model_cfg = reward_model_config()
-        if policy_cfg is None:
-            policy_cfg = policy_config()
 
         irl_model = make_irl_model(reward_model_cfg, env_spec=envs.spec, expert_trajs=experts)
 
@@ -488,6 +486,8 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
             env_wrappers
         ) = ablation_config[ablation]
 
+        if policy_cfg is None:
+            policy_cfg = policy_config()
         policy_cfg['baseline_wrappers'] = env_wrappers
         policy = make_irl_policy(policy_cfg, envs, irl_context.sess)
 
