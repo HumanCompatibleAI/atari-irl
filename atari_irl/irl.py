@@ -484,57 +484,80 @@ def get_ablation_modifiers(*, irl_model, ablation):
 
     return training_kwarg_modifiers, policy_cfg_modifiers
 
-# Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
-def airl(venv, trajectories, discount, seed, log_dir, *,
-         tf_cfg, reward_model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
+
+def get_training_kwargs(
+        *,
+        venv, irl_context, discount,
+        reward_model_cfg, policy_cfg, training_cfg,
+        expert_trajectories, ablation
+):
+    assert 'discount' in training_cfg
     envs = venv
     envs = VecGymEnv(envs)
     envs = TfEnv(envs)
-    experts = trajectories
 
+    if reward_model_cfg is None:
+        reward_model_cfg = reward_model_config()
+    irl_model = make_irl_model(
+        reward_model_cfg, env_spec=envs.spec, expert_trajs=expert_trajectories
+    )
+
+    (
+        ablation_training_modifiers,
+        ablation_policy_modifiers
+    ) = get_ablation_modifiers(irl_model=irl_model, ablation=ablation)
+
+    if policy_cfg is None:
+        policy_cfg = policy_config()
+    policy_cfg.update(ablation_policy_modifiers)
+    policy = make_irl_policy(policy_cfg, envs, irl_context.sess)
+
+    training_kwargs = dict(
+        env=envs,
+        policy=policy,
+        irl_model=irl_model,
+        sampler_args=dict(n_envs=venv.num_envs),
+        n_itr=1000,
+        discount=discount,
+        batch_size=500,
+        max_path_length=100,
+        entropy_weight=0.01,
+        step_size=0.01,
+        # paths substantially increase storage requirements
+        store_paths=False,
+        baseline=ZeroBaseline(env_spec=envs.spec),
+        # optimizer_args={}
+    )
+    training_kwargs.update(training_cfg)
+    training_kwargs.update(ablation_training_modifiers)
+
+    return training_kwargs
+
+
+# Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
+def airl(venv, trajectories, discount, seed, log_dir, *,
+         tf_cfg, reward_model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
     with IRLContext(tf_cfg, seed=seed) as irl_context:
-        if reward_model_cfg is None:
-            reward_model_cfg = reward_model_config()
-        irl_model = make_irl_model(reward_model_cfg, env_spec=envs.spec, expert_trajs=experts)
-
-        (
-            ablation_training_modifiers,
-            ablation_policy_modifiers
-        ) = get_ablation_modifiers(irl_model=irl_model, ablation=ablation)
-
-        if policy_cfg is None:
-            policy_cfg = policy_config()
-        policy_cfg.update(ablation_policy_modifiers)
-        policy = make_irl_policy(policy_cfg, envs, irl_context.sess)
-
-        training_kwargs = dict(
-            env=envs,
-            policy=policy,
-            irl_model=irl_model,
-            sampler_args=dict(n_envs=venv.num_envs),
-            n_itr=1000,
+        training_kwargs = get_training_kwargs(
+            venv=venv,
+            irl_context=irl_context,
             discount=discount,
-            batch_size=500,
-            max_path_length=100,
-            entropy_weight=0.01,
-            step_size=0.01,
-            # paths substantially increase storage requirements
-            store_paths=False,
-            baseline=ZeroBaseline(env_spec=envs.spec),
-            #optimizer_args={}
+            reward_model_cfg=reward_model_cfg,
+            policy_cfg=policy_cfg,
+            training_cfg=training_cfg,
+            expert_trajectories=trajectories,
+            ablation=ablation
         )
-        training_kwargs.update(training_cfg)
-        training_kwargs.update(ablation_training_modifiers)
-
         print("Training arguments: ", training_kwargs)
         algo = IRLRunner(**training_kwargs)
+        irl_model = training_kwargs['irl_model']
+        policy = training_kwargs['policy']
+        reward_model_cfg = training_kwargs['reward_model_cfg']
 
         with rllab_logdir(algo=algo, dirname=log_dir):
             print("Training!")
             algo.train()
-
             reward_params = irl_model.get_params()
-
             # Must pickle policy rather than returning it directly,
             # since parameters in policy will not survive across tf sessions.
             policy_params = policy.tensor_values()
