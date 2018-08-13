@@ -86,7 +86,7 @@ class EnvironmentContext:
             return _thunk
 
         set_global_seeds(self.seed)
-        self.base_vec_env = DummyVecEnv([make_env(i + self.seed) for i in range(self.n_envs)])
+        self.base_vec_env = SubprocVecEnv([make_env(i + self.seed) for i in range(self.n_envs)])
         self.environments = self.base_vec_env
         for fn in self.vec_env_modifiers:
             self.environments = fn(self.environments)
