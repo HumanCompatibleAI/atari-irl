@@ -215,6 +215,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         #    if i % 10 == 0:
         #        print(i, safemean([epinfo['r'] for epinfo in self.learner._epinfobuf]))
         self.learner.step()
+        self.learner.print_log(self.learner)
 
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
@@ -419,12 +420,14 @@ class IRLRunner(IRLTRPO):
                 logger.log("Optimizing policy...")
                 self.optimize_policy(itr, samples_data)
 
-                logger.log("Saving snapshot...")
-                params = self.get_itr_snapshot(itr, samples_data)  # , **kwargs)
-                if self.store_paths:
-                    params["paths"] = samples_data["paths"]
-                logger.save_itr_params(itr, params)
-                logger.log("Saved")
+                if itr % 250 == 0:
+                    logger.log("Saving snapshot...")
+                    params = self.get_itr_snapshot(itr, samples_data)  # , **kwargs)
+                    if self.store_paths:
+                        params["paths"] = samples_data["paths"]
+                    logger.save_itr_params(itr, params)
+                    logger.log("Saved")
+
                 logger.record_tabular('Time', time.time() - start_time)
                 logger.record_tabular('ItrTime', time.time() - itr_start_time)
                 logger.dump_tabular(with_prefix=False)
@@ -485,7 +488,7 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
                 #'optimizer_args': {}
             }
             training_kwargs.update(training_cfg)
-            print(training_kwargs)
+            print("Training arguments: ", training_kwargs)
             print(
                 irl_model_wt,
                 zero_environment_reward,

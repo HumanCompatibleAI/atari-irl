@@ -11,7 +11,7 @@ def train_airl(args):
         intra_op_parallelism_threads=args.n_cpu,
         inter_op_parallelism_threads=args.n_cpu,
         device_count={'GPU': 1},
-        log_device_placement=True
+        log_device_placement=False
     )
     tf_cfg.gpu_options.allow_growth = True
 
