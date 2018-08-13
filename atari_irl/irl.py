@@ -508,11 +508,10 @@ def training_config(
 
 def get_training_kwargs(
         *,
-        venv, irl_context,
-        reward_model_cfg, policy_cfg, training_cfg,
-        expert_trajectories, ablation
+        venv, irl_context, expert_trajectories,
+        ablation='normal',
+        reward_model_cfg=None, policy_cfg=None, training_cfg=None
 ):
-    assert 'discount' in training_cfg
     envs = venv
     envs = VecGymEnv(envs)
     envs = TfEnv(envs)
