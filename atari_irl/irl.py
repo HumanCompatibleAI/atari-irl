@@ -507,35 +507,27 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
         policy_cfg.update(ablation_policy_modifiers)
         policy = make_irl_policy(policy_cfg, envs, irl_context.sess)
 
-        training_kwargs = {
-            'n_itr': 1000,
-            'batch_size': 500,
-            'max_path_length': 100,
-            'irl_model_wt': irl_model_wt,
-            'entropy_weight': 0.01,
-            # paths substantially increase storage requirements
-            'store_paths': False,
-            'step_size': 0.01,
-            #'optimizer_args': {}
-        }
-        training_kwargs.update(training_cfg)
-        print("Training arguments: ", training_kwargs)
-        print(
-            irl_model_wt,
-            zero_environment_reward,
-            env_wrappers
-        )
-
-        algo = IRLRunner(
+        training_kwargs = dict(
             env=envs,
             policy=policy,
             irl_model=irl_model,
-            discount=discount,
             sampler_args=dict(n_envs=venv.num_envs),
-            zero_environment_reward=zero_environment_reward,
+            n_itr=1000,
+            discount=discount,
+            batch_size=500,
+            max_path_length=100,
+            entropy_weight=0.01,
+            step_size=0.01,
+            # paths substantially increase storage requirements
+            store_paths=False,
             baseline=ZeroBaseline(env_spec=envs.spec),
-            **training_kwargs
+            #optimizer_args={}
         )
+        training_kwargs.update(training_cfg)
+        training_kwargs.update(ablation_training_modifiers)
+
+        print("Training arguments: ", training_kwargs)
+        algo = IRLRunner(**training_kwargs)
 
         with rllab_logdir(algo=algo, dirname=log_dir):
             print("Training!")
