@@ -460,6 +460,30 @@ class IRLContext:
         self.tg_context.__exit__(*args)
 
 
+def get_ablation_modifiers(*, irl_model, ablation):
+    irl_reward_wrappers = [
+        wrap_env_with_args(VecRewardZeroingEnv),
+        wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
+    ]
+    ablation_config = defaultdict(lambda: (1.0, True, irl_reward_wrappers))
+    ablation_config['train_rl'] = (0.0, False, [])
+    (
+        irl_model_wt,
+        zero_environment_reward,
+        env_wrappers
+    ) = ablation_config[ablation]
+
+    training_kwarg_modifiers = {
+        'irl_model_wt': irl_model_wt,
+        'zero_environment_reward': zero_environment_reward
+    }
+
+    policy_cfg_modifiers = {
+        'baseline_wrappers': env_wrappers
+    }
+
+    return training_kwarg_modifiers, policy_cfg_modifiers
+
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(venv, trajectories, discount, seed, log_dir, *,
          tf_cfg, reward_model_cfg=None, policy_cfg=None, training_cfg={}, ablation='normal'):
@@ -471,24 +495,16 @@ def airl(venv, trajectories, discount, seed, log_dir, *,
     with IRLContext(tf_cfg, seed=seed) as irl_context:
         if reward_model_cfg is None:
             reward_model_cfg = reward_model_config()
-
         irl_model = make_irl_model(reward_model_cfg, env_spec=envs.spec, expert_trajs=experts)
 
-        irl_reward_wrappers = [
-            wrap_env_with_args(VecRewardZeroingEnv),
-            wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
-        ]
-        ablation_config = defaultdict(lambda: (1.0, True, irl_reward_wrappers))
-        ablation_config['train_rl'] = (0.0, False, [])
         (
-            irl_model_wt,
-            zero_environment_reward,
-            env_wrappers
-        ) = ablation_config[ablation]
+            ablation_training_modifiers,
+            ablation_policy_modifiers
+        ) = get_ablation_modifiers(irl_model=irl_model, ablation=ablation)
 
         if policy_cfg is None:
             policy_cfg = policy_config()
-        policy_cfg['baseline_wrappers'] = env_wrappers
+        policy_cfg.update(ablation_policy_modifiers)
         policy = make_irl_policy(policy_cfg, envs, irl_context.sess)
 
         training_kwargs = {
