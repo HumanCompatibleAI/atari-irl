@@ -64,8 +64,11 @@ class TfContext:
 
 
 class EnvironmentContext:
-    def __init__(self, env_name, seed, n_envs=1, env_modifiers=list(), vec_env_modifiers=list()):
+    def __init__(self, *, env_name=None, make_env=None, seed, n_envs=1, env_modifiers=list(), vec_env_modifiers=list()):
         self.env_name = env_name
+        if make_env is None:
+            make_env = lambda: gym.make(self.env_name)
+        self.make_env = make_env
         self.n_envs = n_envs
         self.env_modifiers = env_modifiers
         self.vec_env_modifiers = vec_env_modifiers
@@ -74,7 +77,7 @@ class EnvironmentContext:
     def __enter__(self):
         def make_env(i):
             def _thunk():
-                env = gym.make(self.env_name)
+                env = self.make_env()
                 env.seed(i)
                 for fn in self.env_modifiers:
                     env = fn(env)
