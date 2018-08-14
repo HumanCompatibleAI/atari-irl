@@ -229,9 +229,9 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         # Flush the buffer, because the IRL reward model changes, and so we
         # can't actually compare with old episodes
         self.learner._epinfobuf = deque(maxlen=100)
-        for i in range(50 if itr > 0 else 1):
+        for i in range(100 if itr > 1 else 1):
             if i > 0:
-                print(f"Step {i}")
+                print(f"Iteration {itr} policy update step {i}")
                 self.learner.print_log(self.learner)
             self.learner.step()
 
