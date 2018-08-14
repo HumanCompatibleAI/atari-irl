@@ -88,9 +88,11 @@ class VecIRLRewardEnv(VecEnvWrapper):
         VecEnvWrapper.__init__(self, env)
         self.reward_network = reward_network
         self.prev_obs = None
+        self.reward_total = np.zeros(self.num_envs)
+        print("Wrapping env with reward network")
 
     def step(self, acts):
-        obs, _, done, info = self.venv.step(acts)
+        obs, _, done, infos = self.venv.step(acts)
 
         assert np.sum(_) == 0
 
@@ -100,9 +102,19 @@ class VecIRLRewardEnv(VecEnvWrapper):
             self.reward_network.obs_t: obs
         })
         assert len(rewards) == len(obs)
-        return obs, rewards.reshape(rewards.shape[0]), done, info
+        rewards = rewards.reshape(self.num_envs)
+        self.reward_total += rewards
+        for i, info in enumerate(infos):
+            if 'episode' in info:
+                assert info['episode']['r'] == 0
+                info['episode']['r'] = self.reward_total[i]
+                self.reward_total[i] = 0
+        return obs, rewards, done, infos
 
     def reset(self):
+        # This means that we assume that a real reset happens here, regardless
+        # of whether or not the environment is actually done
+        self.reward_total = np.zeros(self.num_envs)
         return self.venv.reset()
 
     def step_wait(self):
