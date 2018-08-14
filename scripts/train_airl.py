@@ -21,7 +21,7 @@ def train_airl(args):
     with env_context_for_args(args) as context:
         logger.configure()
         reward, policy_params = irl.airl(
-            context.environments, ts, args.discount, args.irl_seed, logger.get_dir(),
+            context.environments, ts, args.irl_seed, logger.get_dir(),
             tf_cfg=tf_cfg,
             training_cfg={
                 'n_itr': args.n_iter,

@@ -558,7 +558,7 @@ def get_training_kwargs(
     training_kwargs.update(training_cfg)
     training_kwargs.update(ablation_training_modifiers)
 
-    return training_kwargs
+    return training_kwargs, policy_cfg, reward_model_cfg
 
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
@@ -569,7 +569,7 @@ def airl(
         ablation='normal'
 ):
     with IRLContext(tf_cfg, seed=seed) as irl_context:
-        training_kwargs = get_training_kwargs(
+        training_kwargs, _, reward_model_cfg = get_training_kwargs(
             venv=venv,
             irl_context=irl_context,
             reward_model_cfg=reward_model_cfg,
@@ -580,9 +580,8 @@ def airl(
         )
         print("Training arguments: ", training_kwargs)
         algo = IRLRunner(**training_kwargs)
-        irl_model = training_kwargs['irl_model']
-        policy = training_kwargs['policy']
-        reward_model_cfg = training_kwargs['reward_model_cfg']
+        irl_model = algo.irl_model
+        policy = algo.policy
 
         with rllab_logdir(algo=algo, dirname=log_dir):
             print("Training!")
