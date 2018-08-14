@@ -501,7 +501,7 @@ def training_config(
         *,
         n_itr=1000,
         discount=0.99,
-        batch_size=500,
+        batch_size=5000,
         max_path_length=100,
         entropy_weight=0.01,
         step_size=0.01
