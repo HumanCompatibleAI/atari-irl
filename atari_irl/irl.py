@@ -50,8 +50,16 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     things because of a bunch of shape issues between MuJoCo environments and
     Atari environments.
     - It has some of the responsibilities of the Sampler
+        if we finagle the input from VectorizedSampler into the right format
+        we can abandon this part, and have things be swappable out
     - It has some of the responsibilities of the Policy
-    - It has some of the responsibilities of the RLAlgorithm
+        that is correct and should stay
+    - It has some of the responsibilities of the RLAlgorithm (TRPO for instance)
+        we should figure out how to split that out of here
+        in particular, training.Learner already implements optimize_policy
+        which depends on a private _run_info buffer, that seems like we just
+        need to reshape and it should be good
+        -> this means that we implement PPOOptimizer
 
     The good news is that the IRL code doesn't actually look at any of the
     shapes, so we should be able to move back to the actual IRLBatchPolOpt
