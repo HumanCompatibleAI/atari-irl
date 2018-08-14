@@ -392,6 +392,7 @@ class IRLRunner(IRLTRPO):
     def __init__(self, *args, cmd_line_args=None, **kwargs):
         IRLTRPO.__init__(self, *args, **kwargs)
         self.cmd_line_args = cmd_line_args
+        self.skip_discriminator = kwargs.get('ablation', False) == 'train_rl'
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):
@@ -445,16 +446,20 @@ class IRLRunner(IRLTRPO):
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
             with logger.prefix('itr #%d | ' % itr):
-                logger.log("Obtaining samples...")
-                paths = self.obtain_samples(itr)
+                if not self.skip_discriminator:
+                    logger.log("Obtaining samples...")
+                    paths = self.obtain_samples(itr)
 
-                logger.log("Processing samples...")
-                paths = self.compute_irl(paths, itr=itr)
-                returns.append(self.log_avg_returns(paths))
-                samples_data = self.process_samples(itr, paths)
+                    logger.log("Processing samples...")
+                    paths = self.compute_irl(paths, itr=itr)
+                    returns.append(self.log_avg_returns(paths))
+                    samples_data = self.process_samples(itr, paths)
 
-                logger.log("Logging diagnostics...")
-                self.log_diagnostics(paths)
+                    logger.log("Logging diagnostics...")
+                    self.log_diagnostics(paths)
+                else:
+                    samples_data=None
+
                 logger.log("Optimizing policy...")
                 self.optimize_policy(itr, samples_data)
 
@@ -582,6 +587,7 @@ def get_training_kwargs(
         store_paths=False,
         baseline=ZeroBaseline(env_spec=envs.spec),
         # optimizer_args={}
+        ablation=ablation
     )
     training_kwargs.update(training_cfg)
     training_kwargs.update(ablation_training_modifiers)
