@@ -72,7 +72,6 @@ def print_log(
     logger.logkv("explained_variance", float(ev))
     logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
     logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
-    print(safemean([epinfo['r'] for epinfo in epinfobuf]))
     logger.logkv('time_elapsed', tnow - tfirststart)
     for (lossval, lossname) in zip(lossvals, model.loss_names):
         logger.logkv(lossname, lossval)
