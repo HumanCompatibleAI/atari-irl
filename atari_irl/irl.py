@@ -224,6 +224,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             venv.render()
 
     def train_step(self, itr):
+        self.baselines_venv.reset()
         for i in range(50 if itr > 0 else 1):
             if i > 0:
                 print(f"Step {i}")
