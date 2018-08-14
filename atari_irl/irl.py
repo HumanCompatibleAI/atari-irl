@@ -223,10 +223,12 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             obs, _, dones, _ = venv.step(actions)
             venv.render()
 
-    def train_step(self):
-        self.learner.step()
-        self.learner.print_log(self.learner)
-
+    def train_step(self, itr):
+        for i in range(50 if itr > 0 else 1):
+            if i > 0:
+                print(f"Step {i}")
+                self.learner.print_log(self.learner)
+            self.learner.step()
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     h = nature_cnn(x, **conv_kwargs)
@@ -409,7 +411,7 @@ class IRLRunner(IRLTRPO):
         return paths
 
     def optimize_policy(self, itr, samples_data):
-        self.policy.train_step()
+        self.policy.train_step(itr)
 
     def train(self):
         sess = tf.get_default_session()
