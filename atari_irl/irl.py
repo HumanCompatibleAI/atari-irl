@@ -128,9 +128,14 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         return one_hot(action, 6), dict(prob=self._f_dist(obs))
 
     def _get_actions_right_shape(self, observations):
+        actions, values, _, neglogpacs = self.act_model.step(observations)
         return (
-            one_hot(self.act_model.step(observations)[0], 6),
-            dict(prob=self._f_dist(observations))
+            one_hot(actions, 6),
+            dict(
+                prob=self._f_dist(observations),
+                values=values.reshape(self.baselines_venv.num_envs, 1),
+                neglogpacs=neglogpacs.reshape(self.baselines_venv.num_envs, 1)
+            )
         )
 
     def get_actions(self, observations):
@@ -142,23 +147,24 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             return self._get_actions_right_shape(observations)
 
         actions = []
-        probs = []
         obs = []
+        infos = []
         start = 0
 
         def add_observation_batch(obs_batch, subslice=None):
-            batch_actions, batch_probs = self._get_actions_right_shape(
-                obs_batch
-            )
+            batch_actions, batch_info = self._get_actions_right_shape(obs_batch)
 
             if subslice:
                 batch_actions = batch_actions[subslice]
-                batch_probs = {'prob': batch_probs['prob'][subslice]}
+                batch_info = dict(
+                    (key, batch_info[key][subslice])
+                    for key in batch_info.keys()
+                )
                 obs_batch = obs_batch[subslice]
 
             actions.append(batch_actions)
-            probs.append(batch_probs)
             obs.append(obs_batch)
+            infos.append(batch_info)
 
         for start in range(0, N-batch_size, batch_size):
             end = start + batch_size
@@ -174,15 +180,29 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
         # Note: If we change the shape a bunch this will make us sad
         final_actions = np.vstack(actions)
-        final_probs = np.vstack([p['prob'] for p in probs])
         final_obs = np.vstack(obs)
+
+        agent_info_keys = infos[0].keys()
+        for info in infos:
+            assert agent_info_keys == info.keys()
+
+        agent_info = dict(
+            (key, np.vstack([info[key] for info in infos]))
+            for key in agent_info_keys
+        )
+        for key, value in agent_info.items():
+            if len(value.shape) == 2 and value.shape[1] == 1:
+                agent_info[key] = value.reshape((value.shape[0],))
 
         # Integrity checks in case I wrecked this
         assert len(final_actions) == N
-        assert len(final_probs) == N
+        for key in agent_info_keys:
+            assert len(agent_info[key]) == N
+        # This checks that our observations survived the roundtrip of being
+        # sliced + rearranged with everntyhing else
         assert np.isclose(final_obs, observations).all()
 
-        return final_actions, dict(prob=final_probs)
+        return final_actions, agent_info
 
     def get_params_internal(self, **tags):
         return self.scope.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
