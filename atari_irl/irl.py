@@ -37,7 +37,7 @@ from sandbox.rocky.tf.misc import tensor_utils
 
 import joblib
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 
 from tensorflow.python import debug as tf_debug
@@ -224,7 +224,11 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             venv.render()
 
     def train_step(self, itr):
+        # Reset so that we're not looking at our old bad states
         self.baselines_venv.reset()
+        # Flush the buffer, because the IRL reward model changes, and so we
+        # can't actually compare with old episodes
+        self.learner._epinfobuf = deque(maxlen=100)
         for i in range(50 if itr > 0 else 1):
             if i > 0:
                 print(f"Step {i}")
