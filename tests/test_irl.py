@@ -6,32 +6,34 @@ import pickle
 from baselines.ppo2 import ppo2
 
 
-class TestAtariIRL:
-    def test_sample_shape(self):
-        env = 'PongNoFrameskip-v4'
-        env_modifiers = environments.env_mapping[env]
-        env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
+def assert_trajectory_formatted(samples):
+    print(f"Found {len(samples)} trajectories")
+    for sample in samples:
+        assert 'observations' in sample
+        assert 'actions' in sample
+        T = len(sample['observations'])
+        print(f"\tFound trajectory of length {T}")
+        if not hasattr(sample['observations'], 'shape'):
+            print("\tTime index is list, not numpy dimension")
+        assert np.array(sample['observations']).shape == (T, 84, 84, 4)
+        assert np.array(sample['actions']).shape == (T, 6)
 
-        config = tf.ConfigProto(
+
+class TestAtariIRL:
+    def setup_method(self, method):
+        self.env = 'PongNoFrameskip-v4'
+        env_modifiers = environments.env_mapping[self.env]
+        self.env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
+
+        self.config = tf.ConfigProto(
             allow_soft_placement=True,
             intra_op_parallelism_threads=8,
             inter_op_parallelism_threads=8,
             device_count={'GPU': 1},
         )
-        config.gpu_options.allow_growth=True
+        self.config.gpu_options.allow_growth=True
 
-        def assert_trajectory_formatted(samples):
-            print(f"Found {len(samples)} trajectories")
-            for sample in samples:
-                assert 'observations' in sample
-                assert 'actions' in sample
-                T = len(sample['observations'])
-                print(f"\tFound trajectory of length {T}")
-                if not hasattr(sample['observations'], 'shape'):
-                    print("\tTime index is list, not numpy dimension")
-                assert np.array(sample['observations']).shape == (T, 84, 84, 4)
-                assert np.array(sample['actions']).shape == (T, 6)
-
+    def test_sample_shape(self):
         def invert_ppo_sample_raveling(ppo_samples, num_envs=8):
             return ppo_samples.reshape(
                 num_envs, ppo_samples.shape[0] // num_envs,
@@ -99,9 +101,9 @@ class TestAtariIRL:
             ))
 
         with utils.EnvironmentContext(
-            env_name=env, n_envs=8, seed=0, **env_modifiers
+            env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(config, seed=0) as irl_context:
+            with irl.IRLContext(self.config, seed=0) as irl_context:
                 training_kwargs, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
                     irl_context=irl_context,
@@ -112,4 +114,31 @@ class TestAtariIRL:
                 check_base_policy_sampler(algo, env_context)
                 check_irl_discriminator_sampler(algo, env_context)
                 check_irl_ppo_policy_sampler(algo, env_context)
+
+    def test_vectorized_sampler_processing_to_ppo_results(self):
+        with utils.EnvironmentContext(
+            env_name=self.env, n_envs=1, seed=0, **self.env_modifiers
+        ) as env_context:
+            with irl.IRLContext(self.config, seed=0) as irl_context:
+                training_kwargs, _, _ = irl.get_training_kwargs(
+                    venv=env_context.environments,
+                    irl_context=irl_context,
+                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                )
+                training_kwargs['batch_size'] = 50
+                print("Training arguments: ", training_kwargs)
+
+                env_context.environments.reset()
+                algo = irl.IRLRunner(**training_kwargs)
+
+                algo.start_worker()
+                vectorized_samples = algo.obtain_samples(0)
+
+                # check some basic things about the vectorized samples
+                # We should only have one path
+                assert len(vectorized_samples) == 1
+                assert_trajectory_formatted(vectorized_samples)
+                # It shouldn't be super short
+                assert len(vectorized_samples[0]['actions']) > 100
+
                 assert False
