@@ -435,6 +435,7 @@ class IRLRunner(IRLTRPO):
 
     @overrides
     def optimize_policy(self, itr, samples_data):
+        print(f"Score in training range: {sum(samples_data['paths'][0]['rewards'][:512])}")
         samples_data = self.policy.learner.runner.process_trajectory(
             samples_data['paths'][0]
         )

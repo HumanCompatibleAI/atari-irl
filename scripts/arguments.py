@@ -36,6 +36,11 @@ def add_expert_args(parser):
         help='file for the expert policy',
         default='experts/new_expert'
     )
+    parser.add_argument(
+        '--nsteps',
+        help='length of time in a minibatch step',
+        type=int, default=128
+    )
 
 
 def add_irl_args(parser):
