@@ -429,7 +429,13 @@ class IRLRunner(IRLTRPO):
         logger.record_tabular("NumTimesteps", sum([len(p['rewards']) for p in paths]))
         return paths
 
+    @overrides
     def optimize_policy(self, itr, samples_data):
+        #trajectories = samples_data['samples_data']
+        self.policy.learner.runner.process_trajectory(
+            samples_data['paths'][0]
+        )
+        import pdb; pdb.set_trace()
         self.policy.train_step()
 
     def train(self):
@@ -446,19 +452,13 @@ class IRLRunner(IRLTRPO):
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
             with logger.prefix('itr #%d | ' % itr):
-                if not self.skip_discriminator:
-                    logger.log("Obtaining samples...")
-                    paths = self.obtain_samples(itr)
+                logger.log("Obtaining samples...")
+                paths = self.obtain_samples(itr)
 
-                    logger.log("Processing samples...")
-                    paths = self.compute_irl(paths, itr=itr)
-                    returns.append(self.log_avg_returns(paths))
-                    samples_data = self.process_samples(itr, paths)
-
-                    logger.log("Logging diagnostics...")
-                    self.log_diagnostics(paths)
-                else:
-                    samples_data=None
+                logger.log("Processing samples...")
+                paths = self.compute_irl(paths, itr=itr)
+                returns.append(self.log_avg_returns(paths))
+                samples_data = self.process_samples(itr, paths)
 
                 logger.log("Optimizing policy...")
                 self.optimize_policy(itr, samples_data)

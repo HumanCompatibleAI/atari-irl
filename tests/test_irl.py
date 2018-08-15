@@ -141,33 +141,13 @@ class TestAtariIRL:
                 # It shouldn't be super short
                 assert len(vectorized_samples[0]['actions']) > 100
 
-                def batch_reshape(single_traj_data):
-                    single_traj_data = np.asarray(single_traj_data)
-                    s = single_traj_data.shape
-                    return single_traj_data.reshape(s[0], 1, *s[1:])
-
-                def ppo_process_trajectory(traj):
-                    agent_info = traj['agent_infos']
-                    dones = np.zeros(agent_info['values'].shape)
-                    dones[-1] = 1
-                    algo.policy.baselines_venv.reset()
-                    algo.policy.learner.runner.dones = np.ones(1)
-                    return algo.policy.learner.runner.process_ppo_samples(
-                        # The easy stuff that we just observe
-                        batch_reshape(traj['observations']),
-                        batch_reshape(traj['rewards']),
-                        batch_reshape(traj['actions']).argmax(axis=1),
-                        # now the things from the agent info
-                        agent_info['values'], dones, agent_info['neglogpacs'],
-                        # and the annotations
-                        None, traj['env_infos']
-                    )
-
                 # These are very different because the policy is
                 # non-deterministic. This test is only checking that the
                 # shapes are right, and we need something more deterministic to
                 # determine that the return calculation is also correct
-                ppo_processed = ppo_process_trajectory(vectorized_samples[0])
+                ppo_processed = algo.policy.learner.runner.process_trajectory(
+                    vectorized_samples[0]
+                )
                 ppo_generated = algo.policy.learner.runner.run()
 
                 # the indices before the states and episode infos

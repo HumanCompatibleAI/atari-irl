@@ -5,6 +5,8 @@ from baselines.common import explained_variance
 from baselines.ppo2.ppo2 import constfn, safemean
 from baselines.ppo2 import ppo2
 
+from rllab.sampler.base import BaseSampler
+
 from . import policies
 
 from collections import deque, namedtuple
@@ -152,7 +154,7 @@ def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
                 trajectories[i]
 
 
-class Runner(ppo2.AbstractEnvRunner):
+class Runner(ppo2.AbstractEnvRunner, BaseSampler):
     """
     This is the PPO2 runner, but splitting the sampling and processing stage up
     more explicitly
@@ -161,6 +163,9 @@ class Runner(ppo2.AbstractEnvRunner):
         super().__init__(env=env, model=model, nsteps=nsteps)
         self.lam = lam
         self.gamma = gamma
+
+    def set_algo(self, algo):
+        self.algo = algo
 
     def sample(self):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
@@ -193,6 +198,7 @@ class Runner(ppo2.AbstractEnvRunner):
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        import pdb; pdb.set_trace()
         last_values = self.model.value(self.obs, self.states, self.dones)
         #discount/bootstrap off value fn
         mb_returns = np.zeros_like(mb_rewards)
@@ -210,6 +216,30 @@ class Runner(ppo2.AbstractEnvRunner):
         mb_returns = mb_advs + mb_values
         return (*map(ppo2.sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
             mb_states, epinfos)
+
+    def process_trajectory(self, traj):
+        def batch_reshape(single_traj_data):
+            single_traj_data = np.asarray(single_traj_data)
+            s = single_traj_data.shape
+            return single_traj_data.reshape(s[0], 1, *s[1:])
+
+        agent_info = traj['agent_infos']
+        self.state = None
+        self.obs[:] = traj['observations'][-1]
+        self.dones = np.ones(self.env.num_envs)
+        # This is actually kind of weird w/r/t to the PPO code, because the
+        # batch length is so much longer. Maybe this will work? But if PPO
+        # ablations don't crash, but fail to learn this is probably why.
+        return self.process_ppo_samples(
+            # The easy stuff that we just observe
+            batch_reshape(traj['observations']),
+            np.hstack([batch_reshape(traj['rewards']) for _ in range(8)]),
+            batch_reshape(traj['actions']).argmax(axis=1),
+            # now the things from the agent info
+            agent_info['values'], self.dones, agent_info['neglogpacs'],
+            # and the annotations
+            None, traj['env_infos']
+        )
 
     def run(self):
         return self.process_ppo_samples(*self.sample())
