@@ -31,7 +31,7 @@ from baselines.ppo2.policies import nature_cnn
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
 from .utils import one_hot
 from .policies import EnvPolicy, sample_trajectories, Policy
-from .training import Learner, safemean
+from .training import Learner, safemean, RunInfo
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -92,7 +92,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
                 env=baselines_venv,
                 total_timesteps=10e6,
                 vf_coef=0.5, ent_coef=0.01,
-                nsteps=128, noptepochs=4, nminibatches=4,
+                nsteps=64, noptepochs=4, nminibatches=4,
                 gamma=0.99, lam=0.95,
                 lr=lambda alpha: alpha * 2.5e-4,
                 cliprange=lambda alpha: alpha * 0.1
@@ -431,12 +431,16 @@ class IRLRunner(IRLTRPO):
 
     @overrides
     def optimize_policy(self, itr, samples_data):
-        #trajectories = samples_data['samples_data']
-        self.policy.learner.runner.process_trajectory(
+        samples_data = self.policy.learner.runner.process_trajectory(
             samples_data['paths'][0]
         )
-        import pdb; pdb.set_trace()
-        self.policy.train_step()
+        T = samples_data[0].shape[0]
+        self.policy.learner._run_info = RunInfo(
+            *([data[:512] for data in samples_data[:-2]] + [None, None])
+        )
+        self.policy.learner._itr = itr
+        self.policy.learner.optimize_policy(itr)
+
 
     def train(self):
         sess = tf.get_default_session()

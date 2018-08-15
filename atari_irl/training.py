@@ -198,7 +198,6 @@ class Runner(ppo2.AbstractEnvRunner, BaseSampler):
         mb_values = np.asarray(mb_values, dtype=np.float32)
         mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
         mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        import pdb; pdb.set_trace()
         last_values = self.model.value(self.obs, self.states, self.dones)
         #discount/bootstrap off value fn
         mb_returns = np.zeros_like(mb_rewards)
@@ -227,6 +226,8 @@ class Runner(ppo2.AbstractEnvRunner, BaseSampler):
         self.state = None
         self.obs[:] = traj['observations'][-1]
         self.dones = np.ones(self.env.num_envs)
+        dones = np.zeros(agent_info['values'].shape)
+        dones[-1] = 1
         # This is actually kind of weird w/r/t to the PPO code, because the
         # batch length is so much longer. Maybe this will work? But if PPO
         # ablations don't crash, but fail to learn this is probably why.
@@ -236,7 +237,7 @@ class Runner(ppo2.AbstractEnvRunner, BaseSampler):
             np.hstack([batch_reshape(traj['rewards']) for _ in range(8)]),
             batch_reshape(traj['actions']).argmax(axis=1),
             # now the things from the agent info
-            agent_info['values'], self.dones, agent_info['neglogpacs'],
+            agent_info['values'], dones, agent_info['neglogpacs'],
             # and the annotations
             None, traj['env_infos']
         )
