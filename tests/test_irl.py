@@ -1,4 +1,4 @@
-from atari_irl import irl, utils, environments, policies
+from atari_irl import irl, utils, environments, policies, training
 import tensorflow as tf
 import numpy as np
 import pickle
@@ -34,37 +34,7 @@ class TestAtariIRL:
         self.config.gpu_options.allow_growth=True
 
     def test_sample_shape(self):
-        def invert_ppo_sample_raveling(ppo_samples, num_envs=8):
-            return ppo_samples.reshape(
-                num_envs, ppo_samples.shape[0] // num_envs,
-                *ppo_samples.shape[1:]
-            ).swapaxes(1, 0)
 
-        def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
-            OBS_IDX = 0
-            ACTS_IDX = 3
-            DONES_IDX = 2
-
-            obs = invert_ppo_sample_raveling(
-                ppo_samples[OBS_IDX], num_envs=num_envs
-            )
-            acts = invert_ppo_sample_raveling(
-                ppo_samples[ACTS_IDX], num_envs=num_envs
-            )
-            T = obs.shape[0]
-            observations = [[] for _ in range(num_envs)]
-            actions = [[] for _ in range(num_envs)]
-            assert acts.shape[0] == T
-            for t in range(T):
-                for i, (o, a) in enumerate(zip(obs[t], acts[t])):
-                    observations[i].append(o)
-                    actions[i].append(a)
-            trajectories = [{
-                'observations': np.array(observations[i]),
-                'actions': utils.one_hot(actions[i], 6)
-            } for i in range(num_envs)]
-            np.random.shuffle(trajectories)
-            return trajectories
 
         def check_base_policy_sampler(algo, env_context):
             print("Checking straightforward policy trajectory sampler")
@@ -92,11 +62,11 @@ class TestAtariIRL:
             # Test that our sample raveling inversion actually inverts the
             # sf01 function applied by the ppo2 code
             assert np.isclose(
-                ppo2.sf01(invert_ppo_sample_raveling(
+                ppo2.sf01(training.Runner.invert_ppo_sample_raveling(
                     obs, env_context.environments.num_envs
                 )), obs
             ).all()
-            assert_trajectory_formatted(ppo_samples_to_trajectory_format(
+            assert_trajectory_formatted(training.Runner.ppo_samples_to_trajectory_format(
                 irl_policy_samples, num_envs=env_context.environments.num_envs
             ))
 
