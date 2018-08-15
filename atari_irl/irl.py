@@ -430,6 +430,10 @@ class IRLRunner(IRLTRPO):
         return paths
 
     @overrides
+    def process_samples(self, itr, paths):
+        return {'paths': paths}
+
+    @overrides
     def optimize_policy(self, itr, samples_data):
         samples_data = self.policy.learner.runner.process_trajectory(
             samples_data['paths'][0]
