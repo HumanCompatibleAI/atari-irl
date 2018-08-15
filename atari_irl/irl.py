@@ -15,7 +15,7 @@ from sandbox.rocky.tf.core.layers_powered import LayersPowered
 import sandbox.rocky.tf.core.layers as L
 from sandbox.rocky.tf.distributions.categorical import Categorical
 from sandbox.rocky.tf.spaces.box import Box
-from sandbox.rocky.tf.samplers.batch_sampler import BatchSampler
+from sandbox.rocky.tf.samplers.vectorized_sampler import VectorizedSampler
 from rllab.misc.overrides import overrides
 
 from airl.algos.irl_trpo import IRLTRPO
@@ -432,22 +432,10 @@ class IRLRunner(IRLTRPO):
         return paths
 
     @overrides
-    def process_samples(self, itr, paths):
-        return {'paths': paths}
-
-    @overrides
     def optimize_policy(self, itr, samples_data):
-        print(f"Score in training range: {sum(samples_data['paths'][0]['rewards'][:512])}")
-        samples_data = self.policy.learner.runner.process_trajectory(
-            samples_data['paths'][0]
-        )
-        T = samples_data[0].shape[0]
-        self.policy.learner._run_info = PPOBatch(
-            *([data[:512] for data in samples_data[:-2]] + [None, None])
-        )
         self.policy.learner._itr = itr
+        self.policy.learner._run_info = samples_data
         self.policy.learner.optimize_policy(itr)
-
 
     def train(self):
         sess = tf.get_default_session()
@@ -525,6 +513,27 @@ class PPOBatchSampler(BaseSampler):
     def obtain_samples(self, itr):
         sample = self.algo.policy.runner.sample()
 
+    def process_samples(self, itr, paths):
+        return self.cur_sample
+
+
+class FullTrajectorySampler(VectorizedSampler):
+    @overrides
+    def process_samples(self, itr, paths):
+        """
+        We need to go from paths to PPOBatch shaped samples. This does it in a
+        way that's pretty hacky and doesn't crash, but isn't overall promising,
+        because when you tune the PPO hyperparameters to look at single full
+        trajectories that doesn't work well either
+        """
+        print("Processing samples, albeit hackily!")
+        samples_data = self.algo.policy.learner.runner.process_trajectory(
+            paths[0]
+        )
+        T = samples_data[0].shape[0]
+        return PPOBatch(
+            *([data[:512] for data in samples_data[:-2]] + [None, None])
+        )
 
 
 def get_ablation_modifiers(*, irl_model, ablation):
@@ -632,10 +641,13 @@ def airl(
             policy_cfg=policy_cfg,
             training_cfg=training_cfg,
             expert_trajectories=trajectories,
-            ablation=ablation
+            ablation=ablation,
         )
         print("Training arguments: ", training_kwargs)
-        algo = IRLRunner(**training_kwargs)
+        algo = IRLRunner(
+            **training_kwargs,
+            sampler_cls=FullTrajectorySampler
+        )
         irl_model = algo.irl_model
         policy = algo.policy
 
