@@ -508,10 +508,17 @@ class PPOBatchSampler(BaseSampler):
     def __init__(self, algo):
         super(PPOBatchSampler, self).__init__(algo)
         assert isinstance(algo, DiscreteIRLPolicy)
-        self._itr = 0
+        self.cur_sample = None
+
+    def start_worker(self):
+        pass
+
+    def shutdown_worker(self):
+        pass
 
     def obtain_samples(self, itr):
-        sample = self.algo.policy.runner.sample()
+        self.cur_sample = self.algo.policy.runner.sample()
+        return self.cur_sample.to_trajectories()
 
     def process_samples(self, itr, paths):
         return self.cur_sample
