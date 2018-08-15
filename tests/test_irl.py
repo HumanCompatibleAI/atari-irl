@@ -1,4 +1,4 @@
-from atari_irl import irl, utils, environments, policies, training
+from atari_irl import irl, utils, environments, policies, training, sampling
 import tensorflow as tf
 import numpy as np
 import pickle
@@ -34,8 +34,6 @@ class TestAtariIRL:
         self.config.gpu_options.allow_growth=True
 
     def test_sample_shape(self):
-
-
         def check_base_policy_sampler(algo, env_context):
             print("Checking straightforward policy trajectory sampler")
             policy_samples = policies.sample_trajectories(
@@ -62,11 +60,11 @@ class TestAtariIRL:
             # Test that our sample raveling inversion actually inverts the
             # sf01 function applied by the ppo2 code
             assert np.isclose(
-                ppo2.sf01(training.Runner.invert_ppo_sample_raveling(
+                ppo2.sf01(sampling.invert_ppo_sample_raveling(
                     obs, env_context.environments.num_envs
                 )), obs
             ).all()
-            assert_trajectory_formatted(training.Runner.ppo_samples_to_trajectory_format(
+            assert_trajectory_formatted(sampling.ppo_samples_to_trajectory_format(
                 irl_policy_samples, num_envs=env_context.environments.num_envs
             ))
 
@@ -124,3 +122,34 @@ class TestAtariIRL:
                 for i in range(6):
                     print(i)
                     assert ppo_processed[i][:128].shape == ppo_generated[i].shape
+
+    def test_ppo_sampling_roundtrips(self):
+        with utils.EnvironmentContext(
+            env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
+        ) as env_context:
+            with irl.IRLContext(self.config, seed=0) as irl_context:
+                training_kwargs, _, _ = irl.get_training_kwargs(
+                    venv=env_context.environments,
+                    irl_context=irl_context,
+                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                )
+                training_kwargs['batch_size'] = 50
+                print("Training arguments: ", training_kwargs)
+
+                env_context.environments.reset()
+                algo = irl.IRLRunner(**training_kwargs)
+
+                ppo_sample = algo.policy.learner.runner.sample()
+                trajectories = ppo_sample.to_trajectories()
+                assert_trajectory_formatted(trajectories.trajectories)
+                roundtrip_sample = trajectories.to_ppo_sample()
+
+                assert ppo_sample.obs == roundtrip_sample.obs
+                assert ppo_sample.rewards == roundtrip_sample.rewards
+                assert ppo_sample.actions == roundtrip_sample.actions
+                assert ppo_sample.values == roundtrip_sample.values
+                assert ppo_sample.dones == roundtrip_sample.dones
+                assert ppo_sample.neglogpacs == roundtrip_sample.neglogpacs
+                assert ppo_sample.states == roundtrip_sample.states
+                assert ppo_sample.epinfos == roundtrip_sample.epinfos
+                assert ppo_sample.runner == roundtrip_sample.runner

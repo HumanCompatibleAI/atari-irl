@@ -8,16 +8,17 @@ from baselines.ppo2 import ppo2
 from rllab.sampler.base import BaseSampler
 
 from . import policies, utils
+from .sampling import PPOSample
 
 from collections import deque, namedtuple
 import time
 
 
-RunInfo = namedtuple('RunInfo', [
+PPOBatch = namedtuple('PPOBatch', [
     'obs', 'returns', 'masks', 'actions', 'values', 'neglogpacs', 'states',
     'epinfos'
 ])
-RunInfo.train_args = lambda self: (
+PPOBatch.train_args = lambda self: (
     self.obs, self.returns, self.masks, self.actions, self.values, self.neglogpacs
 )
 BatchingConfig = namedtuple('BatchingInfo', [
@@ -164,39 +165,6 @@ class Runner(ppo2.AbstractEnvRunner, BaseSampler):
         self.lam = lam
         self.gamma = gamma
 
-    @staticmethod
-    def invert_ppo_sample_raveling(ppo_samples, num_envs=8):
-        return ppo_samples.reshape(
-            num_envs, ppo_samples.shape[0] // num_envs,
-            *ppo_samples.shape[1:]
-        ).swapaxes(1, 0)
-
-    @staticmethod
-    def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
-        OBS_IDX = 0
-        ACTS_IDX = 3
-
-        obs = Runner.invert_ppo_sample_raveling(
-            ppo_samples[OBS_IDX], num_envs=num_envs
-        )
-        acts = Runner.invert_ppo_sample_raveling(
-            ppo_samples[ACTS_IDX], num_envs=num_envs
-        )
-        T = obs.shape[0]
-        observations = [[] for _ in range(num_envs)]
-        actions = [[] for _ in range(num_envs)]
-        assert acts.shape[0] == T
-        for t in range(T):
-            for i, (o, a) in enumerate(zip(obs[t], acts[t])):
-                observations[i].append(o)
-                actions[i].append(a)
-        trajectories = [{
-                            'observations': np.array(observations[i]),
-                            'actions': utils.one_hot(actions[i], 6)
-                        } for i in range(num_envs)]
-        np.random.shuffle(trajectories)
-        return trajectories
-
     def sample(self):
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
         mb_states = self.states
@@ -214,7 +182,10 @@ class Runner(ppo2.AbstractEnvRunner, BaseSampler):
                 if maybeepinfo: epinfos.append(maybeepinfo)
             mb_rewards.append(rewards)
 
-        return mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs, mb_states, epinfos
+        return PPOSample(
+            mb_obs, mb_rewards, mb_actions, mb_values, mb_dones,
+            mb_neglogpacs, mb_states, epinfos, self
+        )
 
     def process_ppo_samples(
             self, mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs,
@@ -273,7 +244,7 @@ class Runner(ppo2.AbstractEnvRunner, BaseSampler):
         )
 
     def run(self):
-        return self.process_ppo_samples(*self.sample())
+        return self.sample().to_ppo_batch()
 
 
 class Learner:
@@ -351,7 +322,7 @@ class Learner:
 
     def obtain_samples(self, itr):
         # Run the model on the environments
-        self._run_info = RunInfo(*self.runner.run())
+        self._run_info = self.runner.run()
         self._epinfobuf.extend(self._run_info.epinfos)
         self._itr = itr
         #import pdb; pdb.set_trace()

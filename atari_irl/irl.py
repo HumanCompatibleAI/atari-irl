@@ -5,6 +5,7 @@ import pickle
 from rllab.misc import logger
 from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
 from rllab.baselines.zero_baseline import ZeroBaseline
+from rllab.sampler.base import BaseSampler
 from sandbox.rocky.tf.envs.base import TfEnv
 from sandbox.rocky.tf.policies.gaussian_mlp_policy import GaussianMLPPolicy
 from sandbox.rocky.tf.policies.categorical_mlp_policy import CategoricalMLPPolicy
@@ -31,7 +32,8 @@ from baselines.ppo2.policies import nature_cnn
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
 from .utils import one_hot
 from .policies import EnvPolicy, sample_trajectories, Policy
-from .training import Learner, safemean, RunInfo
+from .training import Learner, safemean
+from .sampling import PPOBatch
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -92,7 +94,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
                 env=baselines_venv,
                 total_timesteps=10e6,
                 vf_coef=0.5, ent_coef=0.01,
-                nsteps=64, noptepochs=4, nminibatches=4,
+                nsteps=128, noptepochs=4, nminibatches=4,
                 gamma=0.99, lam=0.95,
                 lr=lambda alpha: alpha * 2.5e-4,
                 cliprange=lambda alpha: alpha * 0.1
@@ -440,7 +442,7 @@ class IRLRunner(IRLTRPO):
             samples_data['paths'][0]
         )
         T = samples_data[0].shape[0]
-        self.policy.learner._run_info = RunInfo(
+        self.policy.learner._run_info = PPOBatch(
             *([data[:512] for data in samples_data[:-2]] + [None, None])
         )
         self.policy.learner._itr = itr
@@ -512,6 +514,17 @@ class IRLContext:
     def __exit__(self, *args):
         self.sess_context.__exit__(*args)
         self.tg_context.__exit__(*args)
+
+
+class PPOBatchSampler(BaseSampler):
+    def __init__(self, algo):
+        super(PPOBatchSampler, self).__init__(algo)
+        assert isinstance(algo, DiscreteIRLPolicy)
+        self._itr = 0
+
+    def obtain_samples(self, itr):
+        sample = self.algo.policy.runner.sample()
+
 
 
 def get_ablation_modifiers(*, irl_model, ablation):
