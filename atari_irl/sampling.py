@@ -31,24 +31,22 @@ class Trajectory:
         }
         self.is_finalized = False
 
+        self.added_data = {}
+
     def __getitem__(self, key):
-        return {
-            'observations': self.observations,
-            'actions': self.actions,
-            'rewards': self.rewards,
-            'agent_infos': self.agent_infos
-        }[key]
+        if hasattr(self, key):
+            return getattr(self, key)
+        else:
+            return self.added_data[key]
 
     def __setitem__(self, key, value):
-        if key == 'observations':
-            self.observations = value
-        elif key == 'actions':
-            self.actions = value
-        elif key == 'rewards':
-            self.rewards = value
+        if hasattr(self, key):
+            setattr(self, key, value)
+        else:
+            self.added_data[key] = value
 
     def __contains__(self, key):
-        return key in {'observations', 'actions', 'rewards'}
+        return hasattr(self, key) or key in self.added_data
 
     def add_ppo_batch_data(self, obs, act, rew, done, value, neglogpac, prob):
         self.observations.append(obs)
