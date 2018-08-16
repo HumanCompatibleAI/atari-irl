@@ -50,13 +50,14 @@ class Trajectory:
     def __contains__(self, key):
         return key in {'observations', 'actions', 'rewards'}
 
-    def add_ppo_batch_data(self, obs, act, rew, done, value, neglogpac):
+    def add_ppo_batch_data(self, obs, act, rew, done, value, neglogpac, prob):
         self.observations.append(obs)
         self.actions.append(act)
         self.rewards.append(rew)
         self.env_infos['dones'].append(done)
         self.agent_infos['values'].append(value)
         self.agent_infos['neglogpacs'].append(neglogpac)
+        self.agent_infos['prob'].append(prob)
 
     def finalize(self):
         assert not self.is_finalized
@@ -114,6 +115,8 @@ class PPOSample:
         self.train_batch_size = self.runner.model.train_model.X.shape[0].value
         assert self.sample_batch_size % self.train_batch_size == 0
 
+        self.probabilities = self._get_sample_probabilities()
+
     def to_ppo_batch(self) -> PPOBatch:
         return PPOBatch(*self.runner.process_ppo_samples(
             self.obs, self.rewards, self.actions, self.values, self.dones,
@@ -146,6 +149,18 @@ class PPOSample:
         assert ans.shape[1] == self.sample_batch_num_envs
         return ans
 
+    def _get_sample_probabilities(self):
+        train_batched_obs = self._ravel_time_env_batch_to_train_batch(self.obs)
+        sess = tf.get_default_session()
+        tm = self.runner.model.train_model
+        ps = np.asarray([
+            # we weirdly don't have direct access to the probabilities anywhere
+            # so we need to construct this node from teh logits
+            sess.run(tf.nn.softmax(tm.pd.logits), {tm.X: train_batch_obs})
+            for train_batch_obs in train_batched_obs
+        ])
+        return self._ravel_train_batch_to_time_env_batch(ps)
+
     def to_trajectories(self) -> 'Trajectories':
         T = len(self.obs)
         num_envs = self.obs[0].shape[0]
@@ -160,6 +175,7 @@ class PPOSample:
                     self.dones[t][e],
                     self.values[t][e],
                     self.neglogpacs[t][e],
+                    self.probabilities[t][e]
                 )
 
         for traj in buffer:

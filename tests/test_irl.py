@@ -175,18 +175,48 @@ class TestAtariIRL:
                 train_batch_raveled_obs = ppo_sample._ravel_time_env_batch_to_train_batch(
                     ppo_sample.obs
                 )
-                # check that the second chunk of the first batch is the same as the second
-                # environment in the set. This shows that we stacked the environments
+                # check that the second chunk of the first batch is the same as
+                # the second environment in the ppo sample. This shows that we
+                # stacked the environments correctly
                 assert np.isclose(
-                    train_batch_raveled_obs[0][1], ppo_sample.obs[:, 1]
+                    train_batch_raveled_obs[0][ppo_sample.obs.shape[0]:],
+                    ppo_sample.obs[:, 1]
                 ).all()
-                # check that the roundtrip worked
+
+                # check that the roundtrip works, as a sanity check
                 assert np.isclose(
                     ppo_sample.obs, ppo_sample._ravel_train_batch_to_time_env_batch(
                         train_batch_raveled_obs
                     )
                 ).all()
 
-                ppo_batch = ppo_sample.to_ppo_batch()
+    def test_ppo_sampling_probs_calculation(self):
+        with utils.EnvironmentContext(
+            env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
+        ) as env_context:
+            with irl.IRLContext(self.config, seed=0) as irl_context:
+                training_kwargs, _, _ = irl.get_training_kwargs(
+                    venv=env_context.environments,
+                    irl_context=irl_context,
+                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                )
+                training_kwargs['batch_size'] = 50
+                print("Training arguments: ", training_kwargs)
 
-                import pdb; pdb.set_trace()
+                env_context.environments.reset()
+                algo = irl.IRLRunner(**training_kwargs)
+
+                ppo_sample = algo.policy.learner.runner.sample()
+
+                # check that the probabilities are probabilities and sum to one
+                sums = ppo_sample.probabilities.sum(axis=2)
+                assert np.isclose(sums, np.ones(sums.shape)).all()
+
+                # the probabilities are consistent with the neglogpacs
+                one_hot_actions = utils.one_hot(
+                    ppo_sample.actions.reshape(128 * 8), 6
+                ).reshape(128, 8, 6)
+                neglogpacs = -1 * np.log(
+                    (ppo_sample.probabilities * one_hot_actions).sum(axis=2)
+                )
+                assert np.isclose(neglogpacs, ppo_sample.neglogpacs).all()
