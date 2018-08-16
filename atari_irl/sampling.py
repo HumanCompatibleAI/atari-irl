@@ -103,7 +103,7 @@ class PPOSample:
         self.values = np.asarray(values)
         self.dones = np.asarray(dones)
         self.neglogpacs = np.asarray(neglogpacs)
-        self.states = np.asarray(states)
+        self.states = states
         self.epinfos = epinfos
         self.runner = runner
 
