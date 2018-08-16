@@ -96,21 +96,55 @@ class PPOSample:
             self, obs, rewards, actions, values, dones, neglogpacs, states,
             epinfos, runner
     ):
-        self.obs = obs
-        self.rewards = rewards
-        self.actions = actions
-        self.values = values
-        self.dones = dones
-        self.neglogpacs = neglogpacs
-        self.states = states
+        self.obs = np.asarray(obs)
+        self.rewards = np.asarray(rewards)
+        self.actions = np.asarray(actions)
+        self.values = np.asarray(values)
+        self.dones = np.asarray(dones)
+        self.neglogpacs = np.asarray(neglogpacs)
+        self.states = np.asarray(states)
         self.epinfos = epinfos
         self.runner = runner
+
+        self.sample_batch_timesteps = self.obs.shape[0]
+        self.sample_batch_num_envs = self.obs.shape[1]
+        self.sample_batch_size = (
+            self.sample_batch_timesteps * self.sample_batch_num_envs
+        )
+        self.train_batch_size = self.runner.model.train_model.X.shape[0].value
+        assert self.sample_batch_size % self.train_batch_size == 0
 
     def to_ppo_batch(self) -> PPOBatch:
         return PPOBatch(*self.runner.process_ppo_samples(
             self.obs, self.rewards, self.actions, self.values, self.dones,
             self.neglogpacs, self.states, self.epinfos
         ))
+
+    def _ravel_time_env_batch_to_train_batch(self, inpt):
+        assert inpt.shape[0] == self.sample_batch_timesteps
+        assert inpt.shape[1] == self.sample_batch_num_envs
+
+        num_train_batches = self.sample_batch_size // self.train_batch_size
+
+        # change the first index into environments, not timesteps
+        ans = inpt.swapaxes(0, 1
+        # reshape first indices into # of batches x train batch size
+        ).reshape(
+            num_train_batches, self.train_batch_size, *inpt.shape[2:]
+        )
+        return ans
+
+    def _ravel_train_batch_to_time_env_batch(self, inpt):
+        # reshape things into number of envs x number of timesteps
+        ans = inpt.reshape(
+            self.sample_batch_num_envs,
+            self.sample_batch_timesteps,
+            *inpt.shape[2:]
+        # swap the timesteps back into the first index
+        ).swapaxes(0, 1)
+        assert ans.shape[0] == self.sample_batch_timesteps
+        assert ans.shape[1] == self.sample_batch_num_envs
+        return ans
 
     def to_trajectories(self) -> 'Trajectories':
         T = len(self.obs)

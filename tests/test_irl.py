@@ -153,3 +153,40 @@ class TestAtariIRL:
                 assert ppo_sample.states == roundtrip_sample.states
                 assert ppo_sample.epinfos == roundtrip_sample.epinfos
                 assert ppo_sample.runner == roundtrip_sample.runner
+
+    def test_ppo_sampling_raveling(self):
+        with utils.EnvironmentContext(
+            env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
+        ) as env_context:
+            with irl.IRLContext(self.config, seed=0) as irl_context:
+                training_kwargs, _, _ = irl.get_training_kwargs(
+                    venv=env_context.environments,
+                    irl_context=irl_context,
+                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                )
+                training_kwargs['batch_size'] = 50
+                print("Training arguments: ", training_kwargs)
+
+                env_context.environments.reset()
+                algo = irl.IRLRunner(**training_kwargs)
+
+                ppo_sample = algo.policy.learner.runner.sample()
+
+                train_batch_raveled_obs = ppo_sample._ravel_time_env_batch_to_train_batch(
+                    ppo_sample.obs
+                )
+                # check that the second chunk of the first batch is the same as the second
+                # environment in the set. This shows that we stacked the environments
+                assert np.isclose(
+                    train_batch_raveled_obs[0][1], ppo_sample.obs[:, 1]
+                ).all()
+                # check that the roundtrip worked
+                assert np.isclose(
+                    ppo_sample.obs, ppo_sample._ravel_train_batch_to_time_env_batch(
+                        train_batch_raveled_obs
+                    )
+                ).all()
+
+                ppo_batch = ppo_sample.to_ppo_batch()
+
+                import pdb; pdb.set_trace()
