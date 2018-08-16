@@ -27,6 +27,7 @@ class Trajectory:
         self.agent_infos = {
             'values': [],
             'neglogpacs': [],
+            'prob': []
         }
         self.is_finalized = False
 
@@ -34,8 +35,17 @@ class Trajectory:
         return {
             'observations': self.observations,
             'actions': self.actions,
-            'rewards': self.rewards
+            'rewards': self.rewards,
+            'agent_infos': self.agent_infos
         }[key]
+
+    def __setitem__(self, key, value):
+        if key == 'observations':
+            self.observations = value
+        elif key == 'actions':
+            self.actions = value
+        elif key == 'rewards':
+            self.rewards = value
 
     def __contains__(self, key):
         return key in {'observations', 'actions', 'rewards'}
@@ -61,8 +71,11 @@ class Trajectories:
         self.trajectories = trajectories
         self.ppo_sample = ppo_sample
 
-    def __get__(self, idx):
+    def __getitem__(self, idx):
         return self.trajectories[idx]
+
+    def __len__(self):
+        return len(self.trajectories)
 
     def to_ppo_sample(self) -> 'PPOSample':
         # This is kind of hacky, and ideally we would roundtrip it, but doing

@@ -507,7 +507,7 @@ class IRLContext:
 class PPOBatchSampler(BaseSampler):
     def __init__(self, algo):
         super(PPOBatchSampler, self).__init__(algo)
-        assert isinstance(algo, DiscreteIRLPolicy)
+        assert isinstance(algo.policy, DiscreteIRLPolicy)
         self.cur_sample = None
 
     def start_worker(self):
@@ -517,11 +517,15 @@ class PPOBatchSampler(BaseSampler):
         pass
 
     def obtain_samples(self, itr):
-        self.cur_sample = self.algo.policy.runner.sample()
+        self.cur_sample = self.algo.policy.learner.runner.sample()
         return self.cur_sample.to_trajectories()
 
     def process_samples(self, itr, paths):
-        return self.cur_sample
+        ppo_batch = self.cur_sample.to_ppo_batch()
+        self.algo.policy.learner._run_info = ppo_batch
+        self.algo.policy.learner._epinfobuf.extend(ppo_batch.epinfos)
+        return ppo_batch
+
 
 
 class FullTrajectorySampler(VectorizedSampler):
