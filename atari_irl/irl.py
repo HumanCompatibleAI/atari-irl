@@ -436,6 +436,7 @@ class IRLRunner(IRLTRPO):
         self.policy.learner._itr = itr
         self.policy.learner._run_info = samples_data
         self.policy.learner.optimize_policy(itr)
+        self.policy.learner.print_log(self.policy.learner)
 
     def train(self):
         sess = tf.get_default_session()
@@ -655,9 +656,10 @@ def airl(
             ablation=ablation,
         )
         print("Training arguments: ", training_kwargs)
+        training_kwargs['sampler_args'] = {}
         algo = IRLRunner(
             **training_kwargs,
-            sampler_cls=FullTrajectorySampler
+            sampler_cls=PPOBatchSampler,
         )
         irl_model = algo.irl_model
         policy = algo.policy
