@@ -1,8 +1,11 @@
 import numpy as np
 import tensorflow as tf
-from . import utils
+from . import utils, training
 from collections import namedtuple
 
+from rllab.misc.overrides import overrides
+from rllab.sampler.base import BaseSampler
+from sandbox.rocky.tf.samplers.vectorized_sampler import VectorizedSampler
 
 # This is a PPO Batch that the OpenAI Baselines PPO code uses as its underlying
 # representation
@@ -181,6 +184,54 @@ class PPOSample:
             traj.finalize()
 
         return Trajectories(buffer, self)
+
+
+class PPOBatchSampler(BaseSampler):
+    # If you want to use the baselines PPO sampler as a sampler for the
+    # airl interfaced code, use this.
+    def __init__(self, algo):
+        super(PPOBatchSampler, self).__init__(algo)
+        assert isinstance(algo.policy.learner, training.Learner)
+        self.cur_sample = None
+
+    def start_worker(self):
+        pass
+
+    def shutdown_worker(self):
+        pass
+
+    def obtain_samples(self, itr):
+        self.cur_sample = self.algo.policy.learner.runner.sample()
+        samples = self.cur_sample.to_trajectories()
+        self.algo.irl_model._insert_next_state(samples)
+        return samples
+
+    def process_samples(self, itr, paths):
+        ppo_batch = self.cur_sample.to_ppo_batch()
+        self.algo.policy.learner._run_info = ppo_batch
+        self.algo.policy.learner._epinfobuf.extend(ppo_batch.epinfos)
+        return ppo_batch
+
+
+class FullTrajectorySampler(VectorizedSampler):
+    # If you want to use the RLLab sampling code with a baselines-interfaced
+    # policy, use this.
+    @overrides
+    def process_samples(self, itr, paths):
+        """
+        We need to go from paths to PPOBatch shaped samples. This does it in a
+        way that's pretty hacky and doesn't crash, but isn't overall promising,
+        because when you tune the PPO hyperparameters to look at single full
+        trajectories that doesn't work well either
+        """
+        print("Processing samples, albeit hackily!")
+        samples_data = self.algo.policy.learner.runner.process_trajectory(
+            paths[0]
+        )
+        T = samples_data[0].shape[0]
+        return PPOBatch(
+            *([data[:512] for data in samples_data[:-2]] + [None, None])
+        )
 
 
 # This code isn't actually used right now, but it is tested so I'm keeping it

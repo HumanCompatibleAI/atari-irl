@@ -5,7 +5,7 @@ import pickle
 from rllab.misc import logger
 from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
 from rllab.baselines.zero_baseline import ZeroBaseline
-from rllab.sampler.base import BaseSampler
+
 from sandbox.rocky.tf.envs.base import TfEnv
 from sandbox.rocky.tf.policies.gaussian_mlp_policy import GaussianMLPPolicy
 from sandbox.rocky.tf.policies.categorical_mlp_policy import CategoricalMLPPolicy
@@ -15,8 +15,6 @@ from sandbox.rocky.tf.core.layers_powered import LayersPowered
 import sandbox.rocky.tf.core.layers as L
 from sandbox.rocky.tf.distributions.categorical import Categorical
 from sandbox.rocky.tf.spaces.box import Box
-from sandbox.rocky.tf.samplers.vectorized_sampler import VectorizedSampler
-from rllab.misc.overrides import overrides
 
 from airl.algos.irl_trpo import IRLTRPO
 from airl.models.airl_state import AIRL
@@ -33,6 +31,7 @@ from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, Ve
 from .utils import one_hot
 from .policies import EnvPolicy, sample_trajectories, Policy
 from .training import Learner, safemean
+from . import sampling
 from .sampling import PPOBatch
 
 from sandbox.rocky.tf.misc import tensor_utils
@@ -502,54 +501,6 @@ class IRLContext:
         self.tg_context.__exit__(*args)
 
 
-class PPOBatchSampler(BaseSampler):
-    # If you want to use the baselines PPO sampler as a sampler for the
-    # airl interfaced code, use this.
-    def __init__(self, algo):
-        super(PPOBatchSampler, self).__init__(algo)
-        assert isinstance(algo.policy, DiscreteIRLPolicy)
-        self.cur_sample = None
-
-    def start_worker(self):
-        pass
-
-    def shutdown_worker(self):
-        pass
-
-    def obtain_samples(self, itr):
-        self.cur_sample = self.algo.policy.learner.runner.sample()
-        samples = self.cur_sample.to_trajectories()
-        self.algo.irl_model._insert_next_state(samples)
-        return samples
-
-    def process_samples(self, itr, paths):
-        ppo_batch = self.cur_sample.to_ppo_batch()
-        self.algo.policy.learner._run_info = ppo_batch
-        self.algo.policy.learner._epinfobuf.extend(ppo_batch.epinfos)
-        return ppo_batch
-
-
-class FullTrajectorySampler(VectorizedSampler):
-    # If you want to use the RLLab sampling code with a baselines-interfaced
-    # policy, use this.
-    @overrides
-    def process_samples(self, itr, paths):
-        """
-        We need to go from paths to PPOBatch shaped samples. This does it in a
-        way that's pretty hacky and doesn't crash, but isn't overall promising,
-        because when you tune the PPO hyperparameters to look at single full
-        trajectories that doesn't work well either
-        """
-        print("Processing samples, albeit hackily!")
-        samples_data = self.algo.policy.learner.runner.process_trajectory(
-            paths[0]
-        )
-        T = samples_data[0].shape[0]
-        return PPOBatch(
-            *([data[:512] for data in samples_data[:-2]] + [None, None])
-        )
-
-
 def get_ablation_modifiers(*, irl_model, ablation):
     irl_reward_wrappers = [
         wrap_env_with_args(VecRewardZeroingEnv),
@@ -669,7 +620,7 @@ def airl(
         training_kwargs['sampler_args'] = {}
         algo = IRLRunner(
             **training_kwargs,
-            sampler_cls=PPOBatchSampler,
+            sampler_cls=sampling.PPOBatchSampler,
         )
         irl_model = algo.irl_model
         policy = algo.policy
