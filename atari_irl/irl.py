@@ -186,7 +186,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         for key in agent_info_keys:
             assert len(agent_info[key]) == N
         # This checks that our observations survived the roundtrip of being
-        # sliced + rearranged with everntyhing else
+        # sliced + rearranged with everything else
         assert np.isclose(final_obs, observations).all()
 
         return final_actions, agent_info
@@ -402,7 +402,8 @@ def get_ablation_modifiers(*, irl_model, ablation):
 
     # Default to wrapping the environment with the irl rewards
     ablations = defaultdict(lambda: Ablation(
-        policy_modifiers={'baseline_wrappers': irl_reward_wrappers}
+        policy_modifiers={'baseline_wrappers': irl_reward_wrappers},
+        training_modifiers={}
     ))
     ablations['train_rl'] = Ablation(
         policy_modifiers={'baseline_wrappers': []},
@@ -433,10 +434,13 @@ def get_training_kwargs(
     envs = VecGymEnv(envs)
     envs = TfEnv(envs)
 
+    policy_cfg = policy_config(**policy_cfg)
+    reward_model_cfg = reward_model_config(**reward_model_cfg)
+    training_cfg = training_config(**training_cfg)
+
     # Unfortunately we need to construct a reward model in order to handle the
     # ablations, since in the normal case we need to pass it as an argument to
     # the policy in order to wrap its environment and look at the irl rewards
-    reward_model_cfg = reward_model_config(**reward_model_cfg)
     irl_model = make_irl_model(
         reward_model_cfg, env_spec=envs.spec, expert_trajs=expert_trajectories
     )
@@ -445,26 +449,25 @@ def get_training_kwargs(
     ablation_modifiers = get_ablation_modifiers(
         irl_model=irl_model, ablation=ablation
     )
-    policy_cfg = add_ablation(
-        policy_config(**policy_cfg), ablation_modifiers.policy_modifiers
-    )
-    training_cfg = add_ablation(
-        training_config(**training_cfg), ablation_modifiers.training_modifiers
-    )
 
     # Construct our fixed training keyword arguments. Other values for these
     # are incorrect
     training_kwargs = dict(
         env=envs,
-        policy=make_irl_policy(policy_cfg, envs=envs, sess=irl_context.sess),
+        policy=make_irl_policy(
+            add_ablation(policy_cfg, ablation_modifiers.policy_modifiers),
+            envs=envs, sess=irl_context.sess
+        ),
         irl_model=irl_model,
         sampler_args={},
         baseline=ZeroBaseline(env_spec=envs.spec),
         ablation=ablation
     )
-    training_kwargs.update(training_cfg)
+    training_kwargs.update(
+        add_ablation(training_cfg, ablation_modifiers.training_modifiers)
+    )
 
-    return training_kwargs, policy_cfg, reward_model_cfg
+    return training_kwargs, policy_cfg, reward_model_cfg, training_cfg
 
 
 class IRLRunner(IRLTRPO):
@@ -596,7 +599,7 @@ def airl(
         ablation='normal'
 ):
     with IRLContext(tf_cfg, seed=seed) as irl_context:
-        training_kwargs, policy_cfg, reward_model_cfg = get_training_kwargs(
+        training_kwargs, policy_cfg, reward_model_cfg, training_cfg = get_training_kwargs(
             venv=venv,
             irl_context=irl_context,
             reward_model_cfg=reward_model_cfg,
