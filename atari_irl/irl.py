@@ -245,10 +245,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             obs, _, dones, _ = venv.step(actions)
             venv.render()
 
-    def train_step(self):
-        self.learner.step()
-        self.learner.print_log(self.learner)
-
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     h = nature_cnn(x, **conv_kwargs)
@@ -530,7 +526,6 @@ class PPOBatchSampler(BaseSampler):
         self.algo.policy.learner._run_info = ppo_batch
         self.algo.policy.learner._epinfobuf.extend(ppo_batch.epinfos)
         return ppo_batch
-
 
 
 class FullTrajectorySampler(VectorizedSampler):
