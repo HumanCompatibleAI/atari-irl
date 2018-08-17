@@ -343,14 +343,25 @@ class AtariAIRL(AIRL):
             self._make_param_ops(_vs)
 
 
-def policy_config():
-    return {
-        'policy': DiscreteIRLPolicy,
-        'policy_model': CnnPolicy
-    }
+def policy_config(policy=DiscreteIRLPolicy, policy_model=CnnPolicy):
+    return dict(policy=policy, policy_model=policy_model)
 
 
-def make_irl_policy(policy_cfg, envs, sess):
+def reward_model_config(
+        model=AtariAIRL,
+        state_only=False,
+        reward_arch=cnn_net,
+        value_fn_arch=cnn_net
+):
+    return dict(
+        model=model,
+        state_only=state_only,
+        reward_arch=reward_arch,
+        value_fn_arch=value_fn_arch
+    )
+
+
+def make_irl_policy(policy_cfg, *, envs, sess):
     policy_fn = policy_cfg.pop('policy')
     return policy_fn(
         name='policy',
@@ -358,16 +369,6 @@ def make_irl_policy(policy_cfg, envs, sess):
         sess=sess,
         **policy_cfg
     )
-
-
-def reward_model_config():
-    return {
-        'model': AtariAIRL,
-        'state_only': False,
-        #'max_itrs': 100,
-        'reward_arch': cnn_net,
-        'value_fn_arch': cnn_net
-    }
 
 
 def make_irl_model(model_cfg, *, env_spec, expert_trajs):
@@ -406,7 +407,7 @@ class IRLRunner(IRLTRPO):
         data = joblib.load(open(snapshot_file, 'rb'))
         args = data['cmd_line_args']
 
-        policy = make_irl_policy(policy_config(args), envs, sess)
+        policy = make_irl_policy(policy_config(args), envs=envs, sess=sess)
         irl_model = make_irl_model(reward_model_config(args), env_spec=envs.spec, expert_trajs=expert_trajs)
 
         policy.restore_param_values(data['policy_params'])
@@ -583,28 +584,39 @@ def training_config(
         entropy_weight=0.01,
         step_size=0.01
 ):
-    return {
-        'n_itr': n_itr,
-        'discount': discount,
-        'batch_size': batch_size,
-        'max_path_length': max_path_length,
-        'entropy_weight': entropy_weight,
-        'step_size': step_size
-    }
+    return dict(
+        n_itr=n_itr,
+        discount=discount,
+        batch_size=batch_size,
+        max_path_length=max_path_length,
+        entropy_weight=entropy_weight,
+        step_size=step_size,
+        store_paths=False
+    )
+
+
+def add_ablation(cfg, ablation_cfg):
+    for key in ablation_cfg.keys():
+        if key in cfg:
+            print(
+                f"Warning: Overriding provided value {cfg[key]}"
+                f"for {key} with {ablation_cfg[key]} for ablation"
+            )
+    cfg.update(ablation_cfg)
+    return cfg
 
 
 def get_training_kwargs(
         *,
         venv, irl_context, expert_trajectories,
         ablation='normal',
-        reward_model_cfg=None, policy_cfg=None, training_cfg=None
+        reward_model_cfg={}, policy_cfg={}, training_cfg={}
 ):
     envs = venv
     envs = VecGymEnv(envs)
     envs = TfEnv(envs)
 
-    if reward_model_cfg is None:
-        reward_model_cfg = reward_model_config()
+    reward_model_cfg = reward_model_config(**reward_model_cfg)
     irl_model = make_irl_model(
         reward_model_cfg, env_spec=envs.spec, expert_trajs=expert_trajectories
     )
@@ -614,27 +626,24 @@ def get_training_kwargs(
         ablation_policy_modifiers
     ) = get_ablation_modifiers(irl_model=irl_model, ablation=ablation)
 
-    if policy_cfg is None:
-        policy_cfg = policy_config()
-    policy_cfg.update(ablation_policy_modifiers)
-    policy = make_irl_policy(policy_cfg, envs, irl_context.sess)
+    policy = make_irl_policy(
+        add_ablation(policy_cfg, ablation_policy_modifiers),
+        envs=envs, sess=irl_context.sess
+    )
+    training_cfg = add_ablation(training_cfg, ablation_training_modifiers)
 
-    if training_cfg is None:
-        training_cfg = training_config()
-
+    # All of these are here because other values for them are incorrect,
+    # and difficult to pass from the command line
     training_kwargs = dict(
         env=envs,
         policy=policy,
         irl_model=irl_model,
         sampler_args=dict(n_envs=venv.num_envs),
-        # paths substantially increase storage requirements
-        store_paths=False,
         baseline=ZeroBaseline(env_spec=envs.spec),
         # optimizer_args={}
         ablation=ablation
     )
     training_kwargs.update(training_cfg)
-    training_kwargs.update(ablation_training_modifiers)
 
     return training_kwargs, policy_cfg, reward_model_cfg
 
@@ -643,7 +652,7 @@ def get_training_kwargs(
 def airl(
         venv, trajectories, seed, log_dir,
         *,
-        tf_cfg, reward_model_cfg=None, policy_cfg=None, training_cfg=None,
+        tf_cfg, reward_model_cfg={}, policy_cfg={}, training_cfg={},
         ablation='normal'
 ):
     with IRLContext(tf_cfg, seed=seed) as irl_context:
