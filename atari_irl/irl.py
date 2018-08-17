@@ -506,6 +506,8 @@ class IRLContext:
 
 
 class PPOBatchSampler(BaseSampler):
+    # If you want to use the baselines PPO sampler as a sampler for the
+    # airl interfaced code, use this.
     def __init__(self, algo):
         super(PPOBatchSampler, self).__init__(algo)
         assert isinstance(algo.policy, DiscreteIRLPolicy)
@@ -532,6 +534,8 @@ class PPOBatchSampler(BaseSampler):
 
 
 class FullTrajectorySampler(VectorizedSampler):
+    # If you want to use the RLLab sampling code with a baselines-interfaced
+    # policy, use this.
     @overrides
     def process_samples(self, itr, paths):
         """
