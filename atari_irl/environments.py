@@ -122,7 +122,7 @@ class VecOneHotEncodingEnv(VecEnvWrapper):
 
 easy_env_modifiers = {
     'env_modifiers': [
-        wrap_deepmind,
+        lambda env: wrap_deepmind(env, frame_stack=False),
         wrap_env_with_args(TimeLimitEnv, time_limit=5000)
     ],
     'vec_env_modifiers': [
