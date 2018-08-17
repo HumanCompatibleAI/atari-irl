@@ -36,9 +36,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     the IRLBatchPolOpt framework. Unfortunately, it currently conflates a few
     things because of a bunch of shape issues between MuJoCo environments and
     Atari environments.
-    - It has some of the responsibilities of the Sampler
-        if we finagle the input from VectorizedSampler into the right format
-        we can abandon this part, and have things be swappable out
     - It has some of the responsibilities of the Policy
         that is correct and should stay
     - It has some of the responsibilities of the RLAlgorithm (TRPO for instance)
@@ -207,8 +204,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
     def log_diagnostics(self, paths):
         pass
-        #log_stds = np.vstack([path["agent_infos"]["log_std"] for path in paths])
-        #logger.record_tabular('AveragePolicyStd', np.mean(np.exp(log_stds)))
 
     @property
     def distribution(self):
@@ -523,7 +518,7 @@ class IRLRunner(IRLTRPO):
         self.policy.learner._run_info = samples_data
         self.policy.learner.optimize_policy(itr)
         logger.record_tabular(
-            "PolicyBufferOriginalTaskRewadMan",
+            "PolicyBufferOriginalTaskRewardMean",
             self.policy.learner.mean_reward
         )
         logger.record_tabular(
