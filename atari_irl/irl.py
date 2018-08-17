@@ -27,7 +27,7 @@ from sandbox.rocky.tf.misc import tensor_utils
 
 import joblib
 import time
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 
 
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
@@ -347,13 +347,14 @@ def reward_model_config(
 
 
 def training_config(
-        *,
         n_itr=1000,
         discount=0.99,
         batch_size=5000,
         max_path_length=100,
         entropy_weight=0.01,
-        step_size=0.01
+        step_size=0.01,
+        irl_model_wt=1.0,
+        zero_environment_reward=True
 ):
     return dict(
         n_itr=n_itr,
@@ -362,7 +363,9 @@ def training_config(
         max_path_length=max_path_length,
         entropy_weight=entropy_weight,
         step_size=step_size,
-        store_paths=False
+        store_paths=False,
+        irl_model_wt=irl_model_wt,
+        zero_environment_reward=zero_environment_reward
     )
 
 
@@ -386,39 +389,37 @@ def make_irl_model(model_cfg, *, env_spec, expert_trajs):
     )
 
 
+Ablation = namedtuple('Ablation', [
+    'policy_modifiers', 'training_modifiers'
+])
+
+
 def get_ablation_modifiers(*, irl_model, ablation):
     irl_reward_wrappers = [
         wrap_env_with_args(VecRewardZeroingEnv),
         wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
     ]
-    ablation_config = defaultdict(lambda: (1.0, True, irl_reward_wrappers))
-    ablation_config['train_rl'] = (0.0, False, [])
-    (
-        irl_model_wt,
-        zero_environment_reward,
-        env_wrappers
-    ) = ablation_config[ablation]
 
-    training_kwarg_modifiers = {
-        'irl_model_wt': irl_model_wt,
-        'zero_environment_reward': zero_environment_reward
-    }
+    # Default to wrapping the environment with the irl rewards
+    ablations = defaultdict(lambda: Ablation(
+        policy_modifiers={'baseline_wrappers': irl_reward_wrappers}
+    ))
+    ablations['train_rl'] = Ablation(
+        policy_modifiers={'baseline_wrappers': []},
+        training_modifiers={'irl_model_wt': 0.0, 'zero_environment_reward': True}
+    )
 
-    policy_cfg_modifiers = {
-        'baseline_wrappers': env_wrappers
-    }
-
-    return training_kwarg_modifiers, policy_cfg_modifiers
+    return ablations[ablation]
 
 
-def add_ablation(cfg, ablation_cfg):
-    for key in ablation_cfg.keys():
+def add_ablation(cfg, ablation_modifiers):
+    for key in ablation_modifiers.keys():
         if key in cfg:
             print(
                 f"Warning: Overriding provided value {cfg[key]}"
                 f"for {key} with {ablation_cfg[key]} for ablation"
             )
-    cfg.update(ablation_cfg)
+    cfg.update(ablation_modifiers)
     return cfg
 
 
@@ -432,37 +433,38 @@ def get_training_kwargs(
     envs = VecGymEnv(envs)
     envs = TfEnv(envs)
 
+    # Unfortunately we need to construct a reward model in order to handle the
+    # ablations, since in the normal case we need to pass it as an argument to
+    # the policy in order to wrap its environment and look at the irl rewards
     reward_model_cfg = reward_model_config(**reward_model_cfg)
     irl_model = make_irl_model(
         reward_model_cfg, env_spec=envs.spec, expert_trajs=expert_trajectories
     )
 
-    (
-        ablation_training_modifiers,
-        ablation_policy_modifiers
-    ) = get_ablation_modifiers(irl_model=irl_model, ablation=ablation)
-
-    policy = make_irl_policy(
-        add_ablation(policy_cfg, ablation_policy_modifiers),
-        envs=envs, sess=irl_context.sess
+    # Handle the ablations and default value overrides
+    ablation_modifiers = get_ablation_modifiers(
+        irl_model=irl_model, ablation=ablation
     )
-    training_cfg = add_ablation(training_cfg, ablation_training_modifiers)
+    policy_cfg = add_ablation(
+        policy_config(**policy_cfg), ablation_modifiers.policy_modifiers
+    )
+    training_cfg = add_ablation(
+        training_config(**training_cfg), ablation_modifiers.training_modifiers
+    )
 
-    # All of these are here because other values for them are incorrect,
-    # and difficult to pass from the command line
+    # Construct our fixed training keyword arguments. Other values for these
+    # are incorrect
     training_kwargs = dict(
         env=envs,
-        policy=policy,
+        policy=make_irl_policy(policy_cfg, envs=envs, sess=irl_context.sess),
         irl_model=irl_model,
-        sampler_args=dict(n_envs=venv.num_envs),
+        sampler_args={},
         baseline=ZeroBaseline(env_spec=envs.spec),
-        # optimizer_args={}
         ablation=ablation
     )
     training_kwargs.update(training_cfg)
 
     return training_kwargs, policy_cfg, reward_model_cfg
-
 
 
 class IRLRunner(IRLTRPO):
