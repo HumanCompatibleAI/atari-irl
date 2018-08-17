@@ -5,8 +5,6 @@ from baselines.common import explained_variance
 from baselines.ppo2.ppo2 import constfn, safemean
 from baselines.ppo2 import ppo2
 
-from rllab.sampler.base import BaseSampler
-
 from . import policies, utils
 from .sampling import PPOSample
 
@@ -155,7 +153,7 @@ def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
                 trajectories[i]
 
 
-class Runner(ppo2.AbstractEnvRunner, BaseSampler):
+class Runner(ppo2.AbstractEnvRunner):
     """
     This is the PPO2 runner, but splitting the sampling and processing stage up
     more explicitly
