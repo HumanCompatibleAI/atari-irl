@@ -15,7 +15,7 @@ def train_expert(args):
                 context.environments,
                 total_timesteps=args.num_timesteps,
                 vf_coef=0.5, ent_coef=0.01,
-                nsteps=128, noptepochs=4, nminibatches=4,
+                nsteps=args.nsteps, noptepochs=4, nminibatches=4,
                 gamma=0.99, lam=0.95,
                 lr=lambda alpha: alpha * 2.5e-4,
                 cliprange=lambda alpha: alpha * 0.1

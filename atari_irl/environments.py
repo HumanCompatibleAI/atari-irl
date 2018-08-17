@@ -122,7 +122,7 @@ class VecOneHotEncodingEnv(VecEnvWrapper):
 
 easy_env_modifiers = {
     'env_modifiers': [
-        wrap_deepmind,
+        lambda env: wrap_deepmind(env, frame_stack=False),
         wrap_env_with_args(TimeLimitEnv, time_limit=5000)
     ],
     'vec_env_modifiers': [
@@ -130,12 +130,17 @@ easy_env_modifiers = {
     ]
 }
 
+import functools
+# Episode Life causes us to not actually reset the environments, which means
+# that interleaving, and even running the normal sampler a bunch of times
+# will give us super short trajectories. Right now we set it to false, but
+# that's not an obviously correct way to handle the problem
 atari_modifiers = {
     'env_modifiers': [
         wrap_env_with_args(NoopResetEnv, noop_max=30),
         wrap_env_with_args(MaxAndSkipEnv, skip=4),
-        wrap_deepmind,
-        wrap_env_with_args(TimeLimitEnv, time_limit=5000)
+        functools.partial(wrap_deepmind, episode_life=False),
+        #wrap_env_with_args(TimeLimitEnv, time_limit=5000)
     ],
     'vec_env_modifiers': [
         wrap_env_with_args(VecFrameStack, nstack=4)

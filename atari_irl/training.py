@@ -2,19 +2,23 @@ import numpy as np
 
 from baselines import logger
 from baselines.common import explained_variance
-from baselines.ppo2.ppo2 import Runner, constfn, safemean
+from baselines.ppo2.ppo2 import constfn, safemean
+from baselines.ppo2 import ppo2
 
-from . import policies
+from rllab.sampler.base import BaseSampler
+
+from . import policies, utils
+from .sampling import PPOSample
 
 from collections import deque, namedtuple
 import time
 
 
-RunInfo = namedtuple('RunInfo', [
+PPOBatch = namedtuple('PPOBatch', [
     'obs', 'returns', 'masks', 'actions', 'values', 'neglogpacs', 'states',
     'epinfos'
 ])
-RunInfo.train_args = lambda self: (
+PPOBatch.train_args = lambda self: (
     self.obs, self.returns, self.masks, self.actions, self.values, self.neglogpacs
 )
 BatchingConfig = namedtuple('BatchingInfo', [
@@ -107,6 +111,142 @@ def make_batching_config(*,env, nsteps, noptepochs, nminibatches):
     )
 
 
+def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
+    unravel_index = lambda *args: None
+    # This is what IRLTRPO/IRLNPO actually uses
+    # this will totally explode if we don't have them
+    names_to_indices = {
+        # The data that IRLTRPO/IRLNPO uses
+        # we should expect the rllab-formatted code to explode if it
+        # needs something else
+        'observations': 0,
+        'actions': 3,
+        # The data that PPO uses
+        'returns': 1,
+        'dones': 2,
+        'values': 4,
+        'neglogpacs': 5
+    }
+
+    unraveled = dict(
+        (key, unravel_index(index, ppo_samples, num_envs))
+        for key, index in names_to_indices.items()
+    )
+
+    # This is a special case because TRPO wants advantages, but PPO
+    # doesn't compute it
+    returns = unravel_index(1, ppo_samples, num_envs)
+    values = unravel_index(4, ppo_samples, num_envs)
+    unraveled['advantages'] = returns - values
+
+    T = unraveled['observations'].shape[0]
+    for key, value in unraveled.items():
+        assert len(value) == T
+
+    trajectories = [dict((key, []) for key in unraveled.keys())]
+    for t in range(T):
+        for key in unraveled.keys():
+            for i in range(num_envs):
+                trajectories[i][key].append(unraveled[t][i])
+
+    for i in range(num_envs):
+        for key in unraveled.keys():
+            if key != 'actions':
+                trajectories[i]
+
+
+class Runner(ppo2.AbstractEnvRunner, BaseSampler):
+    """
+    This is the PPO2 runner, but splitting the sampling and processing stage up
+    more explicitly
+    """
+    def __init__(self, *, env, model, nsteps, gamma, lam):
+        super().__init__(env=env, model=model, nsteps=nsteps)
+        self.lam = lam
+        self.gamma = gamma
+
+    def sample(self):
+        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
+        mb_states = self.states
+        epinfos = []
+        for _ in range(self.nsteps):
+            actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
+            mb_obs.append(self.obs.copy())
+            mb_actions.append(actions)
+            mb_values.append(values)
+            mb_neglogpacs.append(neglogpacs)
+            mb_dones.append(self.dones)
+            self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+            for info in infos:
+                maybeepinfo = info.get('episode')
+                if maybeepinfo: epinfos.append(maybeepinfo)
+            mb_rewards.append(rewards)
+
+        return PPOSample(
+            mb_obs, mb_rewards, mb_actions, mb_values, mb_dones,
+            mb_neglogpacs, mb_states, epinfos, self
+        )
+
+    def process_ppo_samples(
+            self, mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs,
+            mb_states, epinfos
+    ):
+        #batch of steps to batch of rollouts
+        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
+        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
+        mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
+        mb_actions = np.asarray(mb_actions)
+        mb_values = np.asarray(mb_values, dtype=np.float32)
+        mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
+        mb_dones = np.asarray(mb_dones, dtype=np.bool)
+        last_values = self.model.value(self.obs, self.states, self.dones)
+        #discount/bootstrap off value fn
+        mb_returns = np.zeros_like(mb_rewards)
+        mb_advs = np.zeros_like(mb_rewards)
+        lastgaelam = 0
+        for t in reversed(range(self.nsteps)):
+            if t == self.nsteps - 1:
+                nextnonterminal = 1.0 - self.dones
+                nextvalues = last_values
+            else:
+                nextnonterminal = 1.0 - mb_dones[t+1]
+                nextvalues = mb_values[t+1]
+            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
+            mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
+        mb_returns = mb_advs + mb_values
+        return (*map(ppo2.sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
+            mb_states, epinfos)
+
+    def process_trajectory(self, traj):
+        def batch_reshape(single_traj_data):
+            single_traj_data = np.asarray(single_traj_data)
+            s = single_traj_data.shape
+            return single_traj_data.reshape(s[0], 1, *s[1:])
+
+        agent_info = traj['agent_infos']
+        self.state = None
+        self.obs[:] = traj['observations'][-1]
+        self.dones = np.ones(self.env.num_envs)
+        dones = np.zeros(agent_info['values'].shape)
+        dones[-1] = 1
+        # This is actually kind of weird w/r/t to the PPO code, because the
+        # batch length is so much longer. Maybe this will work? But if PPO
+        # ablations don't crash, but fail to learn this is probably why.
+        return self.process_ppo_samples(
+            # The easy stuff that we just observe
+            batch_reshape(traj['observations']),
+            np.hstack([batch_reshape(traj['rewards']) for _ in range(8)]),
+            batch_reshape(traj['actions']).argmax(axis=1),
+            # now the things from the agent info
+            agent_info['values'], dones, agent_info['neglogpacs'],
+            # and the annotations
+            None, traj['env_infos']
+        )
+
+    def run(self):
+        return self.sample().to_ppo_batch()
+
+
 class Learner:
     def __init__(self, policy_class, env, *, total_timesteps, nsteps=2048,
                  ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
@@ -182,7 +322,7 @@ class Learner:
 
     def obtain_samples(self, itr):
         # Run the model on the environments
-        self._run_info = RunInfo(*self.runner.run())
+        self._run_info = self.runner.run()
         self._epinfobuf.extend(self._run_info.epinfos)
         self._itr = itr
         #import pdb; pdb.set_trace()
@@ -201,8 +341,6 @@ class Learner:
         frac = 1.0 - (self._update - 1.0) / self.nupdates
         lrnow = self.lr(frac)
         cliprangenow = self.cliprange(frac)
-
-
 
         # Run the training steps for PPO
         mblossvals = train_steps(

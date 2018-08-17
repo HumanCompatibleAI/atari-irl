@@ -13,7 +13,7 @@ def run_irl_policy(args):
             envs = TfEnv(envs)
 
             policy = irl.make_irl_policy(
-                irl.policy_config(args),
+                irl.policy_config(),
                 envs=envs,
                 sess=tf.get_default_session()
             )

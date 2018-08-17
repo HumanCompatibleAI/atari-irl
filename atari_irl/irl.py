@@ -5,6 +5,7 @@ import pickle
 from rllab.misc import logger
 from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
 from rllab.baselines.zero_baseline import ZeroBaseline
+from rllab.sampler.base import BaseSampler
 from sandbox.rocky.tf.envs.base import TfEnv
 from sandbox.rocky.tf.policies.gaussian_mlp_policy import GaussianMLPPolicy
 from sandbox.rocky.tf.policies.categorical_mlp_policy import CategoricalMLPPolicy
@@ -14,7 +15,7 @@ from sandbox.rocky.tf.core.layers_powered import LayersPowered
 import sandbox.rocky.tf.core.layers as L
 from sandbox.rocky.tf.distributions.categorical import Categorical
 from sandbox.rocky.tf.spaces.box import Box
-from sandbox.rocky.tf.samplers.batch_sampler import BatchSampler
+from sandbox.rocky.tf.samplers.vectorized_sampler import VectorizedSampler
 from rllab.misc.overrides import overrides
 
 from airl.algos.irl_trpo import IRLTRPO
@@ -32,6 +33,7 @@ from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, Ve
 from .utils import one_hot
 from .policies import EnvPolicy, sample_trajectories, Policy
 from .training import Learner, safemean
+from .sampling import PPOBatch
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -44,6 +46,27 @@ from tensorflow.python import debug as tf_debug
 
 
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
+    """
+    This lets us wrap our PPO + old training code to almost fit into the
+    the IRLBatchPolOpt framework. Unfortunately, it currently conflates a few
+    things because of a bunch of shape issues between MuJoCo environments and
+    Atari environments.
+    - It has some of the responsibilities of the Sampler
+        if we finagle the input from VectorizedSampler into the right format
+        we can abandon this part, and have things be swappable out
+    - It has some of the responsibilities of the Policy
+        that is correct and should stay
+    - It has some of the responsibilities of the RLAlgorithm (TRPO for instance)
+        we should figure out how to split that out of here
+        in particular, training.Learner already implements optimize_policy
+        which depends on a private _run_info buffer, that seems like we just
+        need to reshape and it should be good
+        -> this means that we implement PPOOptimizer
+
+    The good news is that the IRL code doesn't actually look at any of the
+    shapes, so we should be able to move back to the actual IRLBatchPolOpt
+    interface by breaking some things out.
+    """
     def __init__(
             self,
             name,
@@ -107,20 +130,17 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         return one_hot(action, 6), dict(prob=self._f_dist(obs))
 
     def _get_actions_right_shape(self, observations):
+        actions, values, _, neglogpacs = self.act_model.step(observations)
         return (
-            one_hot(self.act_model.step(observations)[0], 6),
-            dict(prob=self._f_dist(observations))
+            one_hot(actions, 6),
+            dict(
+                prob=self._f_dist(observations),
+                values=values.reshape(self.baselines_venv.num_envs, 1),
+                neglogpacs=neglogpacs.reshape(self.baselines_venv.num_envs, 1)
+            )
         )
 
     def get_actions(self, observations):
-        """
-
-        Args:
-            observations:
-
-        Returns:
-
-        """
         N = observations.shape[0]
         batch_size = self.act_model.X.shape[0].value
 
@@ -129,23 +149,24 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             return self._get_actions_right_shape(observations)
 
         actions = []
-        probs = []
         obs = []
+        infos = []
         start = 0
 
         def add_observation_batch(obs_batch, subslice=None):
-            batch_actions, batch_probs = self._get_actions_right_shape(
-                obs_batch
-            )
+            batch_actions, batch_info = self._get_actions_right_shape(obs_batch)
 
             if subslice:
                 batch_actions = batch_actions[subslice]
-                batch_probs = {'prob': batch_probs['prob'][subslice]}
+                batch_info = dict(
+                    (key, batch_info[key][subslice])
+                    for key in batch_info.keys()
+                )
                 obs_batch = obs_batch[subslice]
 
             actions.append(batch_actions)
-            probs.append(batch_probs)
             obs.append(obs_batch)
+            infos.append(batch_info)
 
         for start in range(0, N-batch_size, batch_size):
             end = start + batch_size
@@ -161,15 +182,29 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
         # Note: If we change the shape a bunch this will make us sad
         final_actions = np.vstack(actions)
-        final_probs = np.vstack([p['prob'] for p in probs])
         final_obs = np.vstack(obs)
+
+        agent_info_keys = infos[0].keys()
+        for info in infos:
+            assert agent_info_keys == info.keys()
+
+        agent_info = dict(
+            (key, np.vstack([info[key] for info in infos]))
+            for key in agent_info_keys
+        )
+        for key, value in agent_info.items():
+            if len(value.shape) == 2 and value.shape[1] == 1:
+                agent_info[key] = value.reshape((value.shape[0],))
 
         # Integrity checks in case I wrecked this
         assert len(final_actions) == N
-        assert len(final_probs) == N
+        for key in agent_info_keys:
+            assert len(agent_info[key]) == N
+        # This checks that our observations survived the roundtrip of being
+        # sliced + rearranged with everntyhing else
         assert np.isclose(final_obs, observations).all()
 
-        return final_actions, dict(prob=final_probs)
+        return final_actions, agent_info
 
     def get_params_internal(self, **tags):
         return self.scope.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
@@ -211,9 +246,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             venv.render()
 
     def train_step(self):
-        #for i in range(30):
-        #    if i % 10 == 0:
-        #        print(i, safemean([epinfo['r'] for epinfo in self.learner._epinfobuf]))
         self.learner.step()
         self.learner.print_log(self.learner)
 
@@ -230,6 +262,8 @@ def cnn_net(x, actions=None, dout=1, **conv_kwargs):
 
 class AtariAIRL(AIRL):
     """
+    This actually fits the AIRL interface! Yay!
+
     Args:
         fusion (bool): Use trajectories from old iterations to train.
         state_only (bool): Fix the learned reward to only depend on state.
@@ -351,9 +385,16 @@ def make_irl_model(model_cfg, *, env_spec, expert_trajs):
 
 
 class IRLRunner(IRLTRPO):
+    """
+    This takes over the IRLTRPO code, to actually run IRL. Right now it has a
+    few issues...
+    [ ] It doesn't share the sample buffer between the discriminator and policy
+    [ ] It doesn't work on MuJoCo
+    """
     def __init__(self, *args, cmd_line_args=None, **kwargs):
         IRLTRPO.__init__(self, *args, **kwargs)
         self.cmd_line_args = cmd_line_args
+        self.skip_discriminator = kwargs.get('ablation', False) == 'train_rl'
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):
@@ -390,8 +431,12 @@ class IRLRunner(IRLTRPO):
         logger.record_tabular("NumTimesteps", sum([len(p['rewards']) for p in paths]))
         return paths
 
+    @overrides
     def optimize_policy(self, itr, samples_data):
-        self.policy.train_step()
+        self.policy.learner._itr = itr
+        self.policy.learner._run_info = samples_data
+        self.policy.learner.optimize_policy(itr)
+        self.policy.learner.print_log(self.policy.learner)
 
     def train(self):
         sess = tf.get_default_session()
@@ -415,8 +460,6 @@ class IRLRunner(IRLTRPO):
                 returns.append(self.log_avg_returns(paths))
                 samples_data = self.process_samples(itr, paths)
 
-                logger.log("Logging diagnostics...")
-                self.log_diagnostics(paths)
                 logger.log("Optimizing policy...")
                 self.optimize_policy(itr, samples_data)
 
@@ -462,6 +505,55 @@ class IRLContext:
         self.tg_context.__exit__(*args)
 
 
+class PPOBatchSampler(BaseSampler):
+    # If you want to use the baselines PPO sampler as a sampler for the
+    # airl interfaced code, use this.
+    def __init__(self, algo):
+        super(PPOBatchSampler, self).__init__(algo)
+        assert isinstance(algo.policy, DiscreteIRLPolicy)
+        self.cur_sample = None
+
+    def start_worker(self):
+        pass
+
+    def shutdown_worker(self):
+        pass
+
+    def obtain_samples(self, itr):
+        self.cur_sample = self.algo.policy.learner.runner.sample()
+        samples = self.cur_sample.to_trajectories()
+        self.algo.irl_model._insert_next_state(samples)
+        return samples
+
+    def process_samples(self, itr, paths):
+        ppo_batch = self.cur_sample.to_ppo_batch()
+        self.algo.policy.learner._run_info = ppo_batch
+        self.algo.policy.learner._epinfobuf.extend(ppo_batch.epinfos)
+        return ppo_batch
+
+
+
+class FullTrajectorySampler(VectorizedSampler):
+    # If you want to use the RLLab sampling code with a baselines-interfaced
+    # policy, use this.
+    @overrides
+    def process_samples(self, itr, paths):
+        """
+        We need to go from paths to PPOBatch shaped samples. This does it in a
+        way that's pretty hacky and doesn't crash, but isn't overall promising,
+        because when you tune the PPO hyperparameters to look at single full
+        trajectories that doesn't work well either
+        """
+        print("Processing samples, albeit hackily!")
+        samples_data = self.algo.policy.learner.runner.process_trajectory(
+            paths[0]
+        )
+        T = samples_data[0].shape[0]
+        return PPOBatch(
+            *([data[:512] for data in samples_data[:-2]] + [None, None])
+        )
+
+
 def get_ablation_modifiers(*, irl_model, ablation):
     irl_reward_wrappers = [
         wrap_env_with_args(VecRewardZeroingEnv),
@@ -491,7 +583,7 @@ def training_config(
         *,
         n_itr=1000,
         discount=0.99,
-        batch_size=500,
+        batch_size=5000,
         max_path_length=100,
         entropy_weight=0.01,
         step_size=0.01
@@ -544,11 +636,12 @@ def get_training_kwargs(
         store_paths=False,
         baseline=ZeroBaseline(env_spec=envs.spec),
         # optimizer_args={}
+        ablation=ablation
     )
     training_kwargs.update(training_cfg)
     training_kwargs.update(ablation_training_modifiers)
 
-    return training_kwargs
+    return training_kwargs, policy_cfg, reward_model_cfg
 
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
@@ -559,20 +652,23 @@ def airl(
         ablation='normal'
 ):
     with IRLContext(tf_cfg, seed=seed) as irl_context:
-        training_kwargs = get_training_kwargs(
+        training_kwargs, _, reward_model_cfg = get_training_kwargs(
             venv=venv,
             irl_context=irl_context,
             reward_model_cfg=reward_model_cfg,
             policy_cfg=policy_cfg,
             training_cfg=training_cfg,
             expert_trajectories=trajectories,
-            ablation=ablation
+            ablation=ablation,
         )
         print("Training arguments: ", training_kwargs)
-        algo = IRLRunner(**training_kwargs)
-        irl_model = training_kwargs['irl_model']
-        policy = training_kwargs['policy']
-        reward_model_cfg = training_kwargs['reward_model_cfg']
+        training_kwargs['sampler_args'] = {}
+        algo = IRLRunner(
+            **training_kwargs,
+            sampler_cls=PPOBatchSampler,
+        )
+        irl_model = algo.irl_model
+        policy = algo.policy
 
         with rllab_logdir(algo=algo, dirname=log_dir):
             print("Training!")
