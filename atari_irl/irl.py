@@ -3,16 +3,11 @@ import numpy as np
 import pickle
 
 from rllab.misc import logger
-from rllab.baselines.linear_feature_baseline import LinearFeatureBaseline
 from rllab.baselines.zero_baseline import ZeroBaseline
 
 from sandbox.rocky.tf.envs.base import TfEnv
-from sandbox.rocky.tf.policies.gaussian_mlp_policy import GaussianMLPPolicy
-from sandbox.rocky.tf.policies.categorical_mlp_policy import CategoricalMLPPolicy
 from rllab.core.serializable import Serializable
 from sandbox.rocky.tf.policies.base import StochasticPolicy
-from sandbox.rocky.tf.core.layers_powered import LayersPowered
-import sandbox.rocky.tf.core.layers as L
 from sandbox.rocky.tf.distributions.categorical import Categorical
 from sandbox.rocky.tf.spaces.box import Box
 
@@ -20,19 +15,12 @@ from airl.algos.irl_trpo import IRLTRPO
 from airl.models.airl_state import AIRL
 from airl.utils.log_utils import rllab_logdir
 from airl.models.fusion_manager import RamFusionDistr
-from airl.models.imitation_learning import DIST_CATEGORICAL
 
 from baselines.ppo2.policies import CnnPolicy, nature_cnn, fc
-from baselines.common.distributions import make_pdtype
-from baselines.common.input import observation_input
-from baselines.ppo2.policies import nature_cnn
 
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
 from .utils import one_hot
-from .policies import EnvPolicy, sample_trajectories, Policy
-from .training import Learner, safemean
-from . import sampling
-from .sampling import PPOBatch
+from . import sampling, training
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -88,7 +76,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         print("Environment: ", self.baselines_venv)
 
         with tf.variable_scope(name) as scope:
-            self.learner = Learner(
+            self.learner = training.Learner(
                 policy_class=policy_model,
                 env=baselines_venv,
                 total_timesteps=10e6,
