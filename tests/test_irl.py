@@ -53,21 +53,6 @@ class TestAtariIRL:
             irl_discriminator_samples = algo.obtain_samples(0)
             assert_trajectory_formatted(irl_discriminator_samples)
 
-        def check_irl_ppo_policy_sampler(algo, env_context):
-            print("Checking IRL PPO policy sampler")
-            irl_policy_samples = algo.policy.learner.runner.run()
-            obs = irl_policy_samples[0]
-            # Test that our sample raveling inversion actually inverts the
-            # sf01 function applied by the ppo2 code
-            assert np.isclose(
-                ppo2.sf01(sampling.invert_ppo_sample_raveling(
-                    obs, env_context.environments.num_envs
-                )), obs
-            ).all()
-            assert_trajectory_formatted(sampling.ppo_samples_to_trajectory_format(
-                irl_policy_samples, num_envs=env_context.environments.num_envs
-            ))
-
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
@@ -81,7 +66,6 @@ class TestAtariIRL:
                 algo = irl.IRLRunner(**training_kwargs)
                 check_base_policy_sampler(algo, env_context)
                 check_irl_discriminator_sampler(algo, env_context)
-                check_irl_ppo_policy_sampler(algo, env_context)
 
     def test_vectorized_sampler_processing_to_ppo_results(self):
         with utils.EnvironmentContext(
