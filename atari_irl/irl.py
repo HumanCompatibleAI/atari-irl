@@ -56,11 +56,18 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             name,
             policy_model,
             envs,
-            baseline_wrappers=[]
+            baseline_wrappers
     ):
         Serializable.quick_init(self, locals())
         assert isinstance(envs.action_space, Box)
         self._dist = Categorical(envs.action_space.shape[0])
+
+        # this is going to be serialized, so we can't add in the envs or
+        # wrappers
+        self.init_args = dict(
+            name=name,
+            policy_model=policy_model
+        )
 
         baselines_venv = envs._wrapped_env.venv
         for fn in baseline_wrappers + [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]:
@@ -224,6 +231,23 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             actions, _ = self.get_actions(obs)
             obs, _, dones, _ = venv.step(actions)
             venv.render()
+
+    def get_itr_snapshot(self):
+        return {
+            'config': self.init_args,
+            # unfortunately get_params() is already taken...
+            'tf_params': self.tensor_values()
+        }
+
+    @staticmethod
+    def restore_from_snapshot(data, envs, baseline_wrappers):
+        model = make_irl_policy(
+            **data['config'],
+            envs=envs,
+            baseline_wrappers=baseline_wrappers
+        )
+        model.set_params(data['tf_params'])
+        return model
 
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
@@ -399,10 +423,11 @@ def training_config(
     )
 
 
-def make_irl_policy(policy_cfg, *, envs):
+def make_irl_policy(policy_cfg, *, envs, baseline_wrappers=None):
     policy_fn = policy_cfg.pop('policy')
     return policy_fn(
         envs=envs,
+        baseline_wrappers=baseline_wrappers,
         **policy_cfg
     )
 
@@ -477,11 +502,14 @@ def get_training_kwargs(
 
     # Construct our fixed training keyword arguments. Other values for these
     # are incorrect
+    baseline_wrappers = ablation_modifiers.policy_modifiers.pop(
+        'baseline_wrappers'
+    )
     training_kwargs = dict(
         env=envs,
         policy=make_irl_policy(
             add_ablation(policy_cfg, ablation_modifiers.policy_modifiers),
-            envs=envs
+            envs=envs, baseline_wrappers=baseline_wrappers
         ),
         irl_model=irl_model,
         sampler_args={},
@@ -502,15 +530,32 @@ class IRLRunner(IRLTRPO):
     [ ] It doesn't share the sample buffer between the discriminator and policy
     [ ] It doesn't work on MuJoCo
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, ablation='none', **kwargs):
         IRLTRPO.__init__(self, *args, **kwargs)
-        self.skip_discriminator = kwargs.get('ablation', False) == 'train_rl'
+        self.ablation = ablation
+        self.skip_discriminator = self.ablation == 'train_rl'
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):
         return dict(
             itr=itr,
-            irl_params=self.irl_model.get_itr_snapshot()
+            ablation=self.ablation,
+            reward_params=self.irl_model.get_itr_snapshot(),
+            policy_params=self.policy.get_itr_snapshot()
+        )
+
+    def restore_from_snapshot(self, snapshot):
+        data = joblib.load(open(snapshot, 'rb'))
+        self.irl_model = AtariAIRL.restore_from_snapshot(data['reward_params'])
+        ablation_modifiers = get_ablation_modifiers(
+            irl_model=self.irl_model, ablation=self.ablation
+        )
+        self.policy = DiscreteIRLPolicy.restore_from_snapshot(
+            data['policy_params'],
+            envs=self.env,
+            baseline_wrappers=ablation_modifiers.policy_modifiers[
+                'baseline_wrappers'
+            ]
         )
 
     def obtain_samples(self, itr):
