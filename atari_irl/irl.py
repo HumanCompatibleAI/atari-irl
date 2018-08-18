@@ -25,6 +25,7 @@ from . import sampling, training
 
 from sandbox.rocky.tf.misc import tensor_utils
 
+import os
 import joblib
 import time
 from collections import defaultdict, namedtuple
@@ -51,11 +52,10 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     """
     def __init__(
             self,
-            name,
             *,
+            name,
             policy_model,
             envs,
-            sess,
             baseline_wrappers=[]
     ):
         Serializable.quick_init(self, locals())
@@ -90,7 +90,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         self.probs = tf.nn.softmax(self.act_model.pd.logits)
         obs_var = self.act_model.X
 
-        self.tensor_values = lambda **kwargs: sess.run(self.get_params())
+        self.tensor_values = lambda **kwargs: tf.get_default_session().run(self.get_params())
 
         self._f_dist = tensor_utils.compile_function(
             inputs=[obs_var],
@@ -247,10 +247,11 @@ class AtariAIRL(AIRL):
         max_itrs (int): Number of training iterations to run per fit step.
     """
     #TODO(Aaron): Figure out what all of these args mean
-    def __init__(self, env_spec,
+    def __init__(self, *,
+                 env_spec, # No good default, but we do need to have it
                  expert_trajs=None,
                  reward_arch=cnn_net,
-                 reward_arch_args=None,
+                 reward_arch_args={},
                  value_fn_arch=cnn_net,
                  score_discrim=False,
                  discount=1.0,
@@ -259,8 +260,23 @@ class AtariAIRL(AIRL):
                  fusion=False,
                  name='airl'):
         super(AIRL, self).__init__()
-        if reward_arch_args is None:
-            reward_arch_args = {}
+
+        # Write down everything that we're going to need in order to restore
+        # this. All of these arguments are serializable, so it's pretty easy
+        self.init_args = dict(
+            model=AtariAIRL,
+            env_spec=env_spec,
+            expert_trajs=expert_trajs,
+            reward_arch=reward_arch,
+            reward_arch_args=reward_arch_args,
+            value_fn_arch=value_fn_arch,
+            score_discrim=score_discrim,
+            discount=discount,
+            state_only=state_only,
+            max_its=max_itrs,
+            fusion=fusion,
+            name=name
+        )
 
         if fusion:
             self.fusion = RamFusionDistr(100, subsample_ratio=0.5)
@@ -322,12 +338,29 @@ class AtariAIRL(AIRL):
             self.step = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(tot_loss)
             self._make_param_ops(_vs)
 
+    def get_itr_snapshot(self):
+        return {
+            'config': self.init_args,
+            'tf_params': self.get_params()
+        }
 
-def policy_config(policy=DiscreteIRLPolicy, policy_model=CnnPolicy):
-    return dict(policy=policy, policy_model=policy_model)
+    @staticmethod
+    def restore_from_snapshot(data):
+        model = make_irl_model(**data['config'])
+        model.set_params(data['tf_params'])
+        return model
+
+
+def policy_config(name='policy', policy=DiscreteIRLPolicy, policy_model=CnnPolicy):
+    return dict(name=name, policy=policy, policy_model=policy_model)
 
 
 def reward_model_config(
+        *,
+        # These are serializable, but also there's no reasonably default value
+        # so we have to provide it
+        env_spec,
+        expert_trajs,
         model=AtariAIRL,
         state_only=False,
         reward_arch=cnn_net,
@@ -337,7 +370,9 @@ def reward_model_config(
         model=model,
         state_only=state_only,
         reward_arch=reward_arch,
-        value_fn_arch=value_fn_arch
+        value_fn_arch=value_fn_arch,
+        env_spec=env_spec,
+        expert_trajs=expert_trajs
     )
 
 
@@ -364,24 +399,18 @@ def training_config(
     )
 
 
-def make_irl_policy(policy_cfg, *, envs, sess):
+def make_irl_policy(policy_cfg, *, envs):
     policy_fn = policy_cfg.pop('policy')
     return policy_fn(
-        name='policy',
         envs=envs,
-        sess=sess,
         **policy_cfg
     )
 
 
-def make_irl_model(model_cfg, *, env_spec, expert_trajs):
+def make_irl_model(model_cfg):
     model_kwargs = dict(model_cfg)
     model_cls = model_kwargs.pop('model')
-    return model_cls(
-        env_spec=env_spec,
-        expert_trajs=expert_trajs,
-        **model_kwargs
-    )
+    return model_cls(**model_kwargs)
 
 
 Ablation = namedtuple('Ablation', [
@@ -421,7 +450,7 @@ def add_ablation(cfg, ablation_modifiers):
 
 def get_training_kwargs(
         *,
-        venv, irl_context, expert_trajectories,
+        venv,
         ablation='normal',
         reward_model_cfg={}, policy_cfg={}, training_cfg={}
 ):
@@ -430,15 +459,16 @@ def get_training_kwargs(
     envs = TfEnv(envs)
 
     policy_cfg = policy_config(**policy_cfg)
-    reward_model_cfg = reward_model_config(**reward_model_cfg)
+    reward_model_cfg = reward_model_config(
+        env_spec=envs.spec,
+        **reward_model_cfg
+    )
     training_cfg = training_config(**training_cfg)
 
     # Unfortunately we need to construct a reward model in order to handle the
     # ablations, since in the normal case we need to pass it as an argument to
     # the policy in order to wrap its environment and look at the irl rewards
-    irl_model = make_irl_model(
-        reward_model_cfg, env_spec=envs.spec, expert_trajs=expert_trajectories
-    )
+    irl_model = make_irl_model(reward_model_cfg)
 
     # Handle the ablations and default value overrides
     ablation_modifiers = get_ablation_modifiers(
@@ -451,12 +481,12 @@ def get_training_kwargs(
         env=envs,
         policy=make_irl_policy(
             add_ablation(policy_cfg, ablation_modifiers.policy_modifiers),
-            envs=envs, sess=irl_context.sess
+            envs=envs
         ),
         irl_model=irl_model,
         sampler_args={},
         baseline=ZeroBaseline(env_spec=envs.spec),
-        ablation=ablation
+        ablation=ablation,
     )
     training_kwargs.update(
         add_ablation(training_cfg, ablation_modifiers.training_modifiers)
@@ -472,32 +502,16 @@ class IRLRunner(IRLTRPO):
     [ ] It doesn't share the sample buffer between the discriminator and policy
     [ ] It doesn't work on MuJoCo
     """
-    def __init__(self, *args, cmd_line_args=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         IRLTRPO.__init__(self, *args, **kwargs)
-        self.cmd_line_args = cmd_line_args
         self.skip_discriminator = kwargs.get('ablation', False) == 'train_rl'
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):
         return dict(
             itr=itr,
-            cmd_line_args=self.cmd_line_args,
-            policy_params=self.policy.tensor_values(),
-            irl_params=self.get_irl_params(),
+            irl_params=self.irl_model.get_itr_snapshot()
         )
-
-    @staticmethod
-    def restore_from_snapshot(snapshot_file, envs, expert_trajs, sess):
-        data = joblib.load(open(snapshot_file, 'rb'))
-        args = data['cmd_line_args']
-
-        policy = make_irl_policy(policy_config(args), envs=envs, sess=sess)
-        irl_model = make_irl_model(reward_model_config(args), env_spec=envs.spec, expert_trajs=expert_trajs)
-
-        policy.restore_param_values(data['policy_params'])
-        irl_model.set_params(data['irl_params'])
-
-        return policy, irl_model
 
     def obtain_samples(self, itr):
         paths = super(IRLRunner, self).obtain_samples(itr)
@@ -600,14 +614,13 @@ def airl(
         tf_cfg, reward_model_cfg={}, policy_cfg={}, training_cfg={},
         ablation='normal'
 ):
-    with IRLContext(tf_cfg, seed=seed) as irl_context:
+    reward_model_cfg['expert_trajs'] = trajectories
+    with IRLContext(tf_cfg, seed=seed):
         training_kwargs, policy_cfg, reward_model_cfg, training_cfg = get_training_kwargs(
             venv=venv,
-            irl_context=irl_context,
             reward_model_cfg=reward_model_cfg,
             policy_cfg=policy_cfg,
             training_cfg=training_cfg,
-            expert_trajectories=trajectories,
             ablation=ablation,
         )
         print("Training arguments: ", training_kwargs)

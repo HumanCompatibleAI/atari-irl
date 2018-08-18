@@ -28,8 +28,8 @@ def train_airl(args):
                 'batch_size': args.batch_size,
                 'entropy_weight': args.entropy_wt
             },
-            policy_cfg=irl.policy_config(),
-            reward_model_cfg=irl.reward_model_config(),
+            policy_cfg={},
+            reward_model_cfg={},
             ablation=args.ablation
         )
 
