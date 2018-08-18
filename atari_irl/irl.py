@@ -241,6 +241,13 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
     @staticmethod
     def restore_from_snapshot(data, envs, baseline_wrappers):
+        """
+        Restore a policy from snapshot data.
+
+        Note that this only restores the model part of the policy -- the
+        learner doesn't actually get its state repaired, and so for instances
+        the step size will be different than it was when you saved.
+        """
         model = make_irl_policy(
             **data['config'],
             envs=envs,
@@ -616,7 +623,7 @@ class IRLRunner(IRLTRPO):
                     if self.store_paths:
                         params["paths"] = samples_data["paths"]
                     logger.save_itr_params(itr, params)
-                    logger.log("Saved")
+                    logger.log(f"Saved in directory {logger.get_snapshot_dir()}")
 
                 logger.record_tabular('Time', time.time() - start_time)
                 logger.record_tabular('ItrTime', time.time() - itr_start_time)
