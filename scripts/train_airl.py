@@ -21,12 +21,18 @@ def train_airl(args):
     with env_context_for_args(args) as context:
         logger.configure()
         reward, policy_params = irl.airl(
-            context.environments, ts, args.irl_seed, logger.get_dir(),
+            ts, logger.get_dir(),
             tf_cfg=tf_cfg,
             training_cfg={
                 'n_itr': args.n_iter,
                 'batch_size': args.batch_size,
                 'entropy_weight': args.entropy_wt
+            },
+            env_config={
+                'env_name': args.env,
+                'n_envs': args.num_envs,
+                'seed': args.seed,
+                'one_hot_code': args.one_hot_code
             },
             policy_cfg={},
             reward_model_cfg={},

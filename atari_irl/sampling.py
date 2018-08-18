@@ -61,6 +61,10 @@ class Trajectory:
         self.agent_infos['neglogpacs'].append(neglogpac)
         self.agent_infos['prob'].append(prob)
 
+        if not np.isclose(-1*np.log(prob[act]), neglogpac):
+            print(f"Warning: probability based nlp {-1*np.log(prob[act])} different from {neglogpac}")
+        assert np.isclose(1.0, prob.sum())
+
     def finalize(self):
         assert not self.is_finalized
         self.observations = np.asarray(self.observations)

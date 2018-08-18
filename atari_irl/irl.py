@@ -21,7 +21,7 @@ from baselines.ppo2.policies import CnnPolicy, nature_cnn, fc
 
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
 from .utils import one_hot
-from . import sampling, training
+from . import sampling, training, utils, environments
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -637,11 +637,20 @@ class IRLRunner(IRLTRPO):
 
 
 class IRLContext:
-    def __init__(self, tf_cfg, seed=0):
+    def __init__(self, tf_cfg, env_config):
         self.tf_cfg = tf_cfg
-        self.seed = seed
+        self.env_config = env_config
+        self.seed = env_config['seed']
+
+        env_modifiers = environments.env_mapping[env_config['env_name']]
+        one_hot_code = env_config.pop('one_hot_code')
+        if one_hot_code:
+            env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
+        self.env_config.update(env_modifiers)
 
     def __enter__(self):
+        self.env_context = utils.EnvironmentContext(**self.env_config)
+        self.env_context.__enter__()
         self.train_graph = tf.Graph()
         self.tg_context = self.train_graph.as_default()
         self.tg_context.__enter__()
@@ -657,19 +666,20 @@ class IRLContext:
     def __exit__(self, *args):
         self.sess_context.__exit__(*args)
         self.tg_context.__exit__(*args)
+        self.env_context.__exit__(*args)
 
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(
-        venv, trajectories, seed, log_dir,
+        trajectories, log_dir,
         *,
-        tf_cfg, reward_model_cfg={}, policy_cfg={}, training_cfg={},
+        tf_cfg, env_config, reward_model_cfg={}, policy_cfg={}, training_cfg={},
         ablation='normal'
 ):
     reward_model_cfg['expert_trajs'] = trajectories
-    with IRLContext(tf_cfg, seed=seed):
+    with IRLContext(tf_cfg, env_config) as context:
         training_kwargs, policy_cfg, reward_model_cfg, training_cfg = get_training_kwargs(
-            venv=venv,
+            venv=context.env_context.environments,
             reward_model_cfg=reward_model_cfg,
             policy_cfg=policy_cfg,
             training_cfg=training_cfg,
