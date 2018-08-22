@@ -292,6 +292,12 @@ class JustPress1Environment(gym.Env):
 class SimonSaysEnvironment(JustPress1Environment):
     def __init__(self):
         super().__init__()
+
+        self.correct = np.zeros(self.observation_space.shape).astype(np.uint8)
+        self.incorrect = np.zeros(self.observation_space.shape).astype(np.uint8)
+        boundary = self.correct.shape[1] // 2
+        self.correct[:,:boundary] = 255
+        self.incorrect[:,boundary:] = 255
         
         self.next_move = self.np_random.randint(2)
         self.obs_map = {
@@ -305,22 +311,29 @@ class SimonSaysEnvironment(JustPress1Environment):
         return isinstance(n, np.int64) or isinstance(n, int)
 
     def set_next_move_get_obs(self):
+        assert self.next_move is None
         self.next_move = self.np_random.randint(2)
         return self.obs_map[self.next_move]
 
     def step(self, action):
         reward = 0.0
         self.turns += 1
-        if (
-            self.isint(action) and action == self.next_move or
-            not self.isint(action) and action[0] == self.next_move
-        ):
-            reward = 1.0
-        obs = self.set_next_move_get_obs()
+
+        if self.next_move is not None:
+            if self.isint(action) and action == self.next_move:
+                reward = 2.0
+                obs = self.correct
+            else:
+                obs = self.incorrect
+            self.next_move = None
+        else:
+            obs = self.set_next_move_get_obs()
+
         return obs, reward, self.turns >= 100, {'next_move': self.next_move}
 
     def reset(self):
         self.turns = 0
+        self.next_move = None
         return self.set_next_move_get_obs()
 
 
