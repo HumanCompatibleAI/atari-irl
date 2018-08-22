@@ -78,6 +78,11 @@ def add_irl_args(parser):
         help='entropy_weight',
         type=float, default=0.01
     )
+    parser.add_argument(
+        '--init_location',
+        help='location to initialize training from',
+        type=str, default='none'
+    )
 
 
 def env_context_for_args(args):

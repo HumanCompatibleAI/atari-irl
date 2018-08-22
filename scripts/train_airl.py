@@ -31,7 +31,9 @@ def train_airl(args):
             'seed': args.seed,
             'one_hot_code': args.one_hot_code
         },
-        policy_cfg={},
+        policy_cfg={
+            'init_location': None if args.init_location == 'none' else args.init_location
+        },
         reward_model_cfg={
             'expert_trajs': pickle.load(open(args.trajectories_file, 'rb'))
         },

@@ -432,17 +432,21 @@ def training_config(
         step_size=step_size,
         store_paths=False,
         irl_model_wt=irl_model_wt,
-        zero_environment_reward=zero_environment_reward
+        zero_environment_reward=zero_environment_reward,
     )
 
 
 def make_irl_policy(policy_cfg, *, envs, baseline_wrappers=None):
     policy_fn = policy_cfg.pop('policy')
-    return policy_fn(
+    init_location = policy_cfg.pop('init_location')
+    policy = policy_fn(
         envs=envs,
         baseline_wrappers=baseline_wrappers,
         **policy_cfg
     )
+    if init_location is not None:
+        raise NotImplementedError
+    return policy
 
 
 def make_irl_model(model_cfg):
