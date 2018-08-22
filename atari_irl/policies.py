@@ -149,7 +149,6 @@ def sample_trajectories(*, model, environments, one_hot_code=False, n_trajectori
 
         # Figure out our consequences
         obs, _, dones, _ = environments.step(acts)
-
         if render:
             environments.render()
 

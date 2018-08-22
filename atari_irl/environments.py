@@ -128,6 +128,7 @@ class VecOneHotEncodingEnv(VecEnvWrapper):
     def step_wait(self):
         self.venv.step_wait()
 
+
 class DummyVecEnvWrapper(VecEnvWrapper):
     def step(self, actions):
         return self.venv.step(actions)
@@ -137,6 +138,7 @@ class DummyVecEnvWrapper(VecEnvWrapper):
 
     def step_wait(self):
         return self.venv.step_wait()
+
 
 easy_env_modifiers = {
     'env_modifiers': [
