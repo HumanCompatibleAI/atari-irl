@@ -173,10 +173,26 @@ class Runner(ppo2.AbstractEnvRunner):
             mb_values.append(values)
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
+
+            should_show = False # np.random.random() > .95
+            if should_show:
+                print()
+                obs_summaries = '\t'.join([f"{o[0,0,0]}{o[0,-1,0]}" for o in self.obs])
+                act_summaries = '\t'.join([str(a) for a in actions])
+                print(f"State:\t{obs_summaries}")
+                print(f"Action:\t{act_summaries}")
+
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+
+            if should_show:
+                rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
+                print(f"Reward:\t{rew}")
+                print()
+
             for info in infos:
                 maybeepinfo = info.get('episode')
-                if maybeepinfo: epinfos.append(maybeepinfo)
+                if maybeepinfo:
+                    epinfos.append(maybeepinfo)
             mb_rewards.append(rewards)
 
         return PPOSample(

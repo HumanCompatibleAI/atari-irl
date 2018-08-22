@@ -61,8 +61,6 @@ class Trajectory:
         self.agent_infos['neglogpacs'].append(neglogpac)
         self.agent_infos['prob'].append(prob)
 
-        if not np.isclose(-1*np.log(prob[act]), neglogpac):
-            print(f"Warning: probability based nlp {-1*np.log(prob[act])} different from {neglogpac}")
         assert np.isclose(1.0, prob.sum())
 
     def finalize(self):
@@ -89,7 +87,6 @@ class Trajectories:
         # a proper roundtrip is going to be slower than doing this
         if self.ppo_sample is not None:
             return self.ppo_sample
-
 
 class PPOSample:
     """

@@ -229,8 +229,9 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
         while not any(dones):
             actions, _ = self.get_actions(obs)
-            obs, _, dones, _ = venv.step(actions)
-            venv.render()
+            obs, reward, dones, _ = venv.step(actions)
+            print(reward)
+            #venv.render()
 
     def get_itr_snapshot(self):
         return {
