@@ -686,16 +686,14 @@ class IRLRunner(IRLTRPO):
                 logger.log("Obtaining samples...")
                 paths = self.obtain_samples(itr)
 
-                if not self.skip_discriminator:
-                    logger.log("Training discriminator...")
-                    paths = self.compute_irl(paths, itr=itr)
-
                 logger.log("Processing samples...")
+                if not self.skip_discriminator:
+                    paths = self.compute_irl(paths, itr=itr)
                 returns.append(self.log_avg_returns(paths))
                 samples_data = self.process_samples(itr, paths)
 
+                logger.log("Optimizing policy...")
                 if not self.skip_policy_update:
-                    logger.log("Optimizing policy...")
                     self.optimize_policy(itr, samples_data)
 
                 if itr % 10 == 0:
