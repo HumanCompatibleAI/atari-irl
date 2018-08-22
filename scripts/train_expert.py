@@ -14,7 +14,7 @@ def train_expert(args):
                 CnnPolicy if args.policy_type == 'cnn' else MlpPolicy,
                 context.environments,
                 total_timesteps=args.num_timesteps,
-                vf_coef=0.5, ent_coef=0.01,
+                vf_coef=0.5, ent_coef=args.ent_coef,
                 nsteps=args.nsteps, noptepochs=4, nminibatches=4,
                 gamma=0.99, lam=0.95,
                 lr=lambda alpha: alpha * 2.5e-4,

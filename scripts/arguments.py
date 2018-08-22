@@ -17,6 +17,7 @@ def add_atari_args(parser):
     parser.add_argument('--num_timesteps', type=int, default=int(10e6))
     parser.add_argument('--num_envs', type=int, default=8)
     parser.add_argument('--policy_type', default='cnn')
+    parser.add_argument('--ent_coef', type=float, default=0.01)
     add_bool_feature(parser, 'one_hot_code')
 
 
