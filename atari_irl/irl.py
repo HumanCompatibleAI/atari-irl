@@ -397,7 +397,7 @@ def reward_model_config(
         env_spec,
         expert_trajs,
         model=AtariAIRL,
-        state_only=True,
+        state_only=False,
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
         score_discrim=False
