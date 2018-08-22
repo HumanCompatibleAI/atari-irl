@@ -256,11 +256,18 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     h = nature_cnn(x, **conv_kwargs)
+    activ = tf.nn.relu
     if actions is not None:
-        # Actions must be one-hot coded, otherwise this won't make any sense
-        h = tf.concat([h, actions], axis=1)
-    h2 = tf.nn.relu(fc(h, 'action_state_vec', nh=20, init_scale=np.sqrt(2)))
-    output = fc(h2, 'output', nh=dout, init_scale=np.sqrt(2))
+        assert dout == 1
+        action_size = actions.get_shape()[1].value
+        print(actions.get_shape())
+        selection = fc(h, 'action_selection', nh=action_size, init_scale=np.sqrt(2))
+        h = tf.concat([
+            tf.multiply(actions, selection),
+            actions,
+            h
+        ], axis=1)
+    output = fc(h, 'output', nh=dout, init_scale=np.sqrt(2))
     return output
 
 
