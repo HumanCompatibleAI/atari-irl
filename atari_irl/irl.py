@@ -239,8 +239,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             'tf_params': self.tensor_values()
         }
 
-    @staticmethod
-    def restore_from_snapshot(data, envs, baseline_wrappers):
+    def restore_from_snapshot(self, data):
         """
         Restore a policy from snapshot data.
 
@@ -375,11 +374,11 @@ class AtariAIRL(AIRL):
             'tf_params': self.get_params()
         }
 
-    @staticmethod
-    def restore_from_snapshot(data):
-        model = make_irl_model(**data['config'])
-        model.set_params(data['tf_params'])
-        return model
+    def restore_from_snapshot(self, data):
+        for key, value in data['config'].items():
+            if self.init_args[key] != value:
+                print(f"Warning: different values for {key}")
+        self.set_params(data['tf_params'])
 
 
 def policy_config(name='policy', policy=DiscreteIRLPolicy, policy_model=CnnPolicy):
@@ -553,17 +552,8 @@ class IRLRunner(IRLTRPO):
 
     def restore_from_snapshot(self, snapshot):
         data = joblib.load(open(snapshot, 'rb'))
-        self.irl_model = AtariAIRL.restore_from_snapshot(data['reward_params'])
-        ablation_modifiers = get_ablation_modifiers(
-            irl_model=self.irl_model, ablation=self.ablation
-        )
-        self.policy = DiscreteIRLPolicy.restore_from_snapshot(
-            data['policy_params'],
-            envs=self.env,
-            baseline_wrappers=ablation_modifiers.policy_modifiers[
-                'baseline_wrappers'
-            ]
-        )
+        self.irl_model.restore_from_snapshot(data['reward_params'])
+        self.policy.restore_from_snapshot(data['policy_params'])
 
     def obtain_samples(self, itr):
         paths = super(IRLRunner, self).obtain_samples(itr)
