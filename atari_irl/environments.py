@@ -41,14 +41,6 @@ def atari_setup(env):
     return env
 
 
-class OneHotDecodingEnv(gym.Wrapper):
-    def reset(self, **kwargs):
-        return self.env.reset(**kwargs)
-
-    def step(self, one_hot_actions):
-        return self.env.step(np.argmax(one_hot_actions, axis=0))
-
-
 class TimeLimitEnv(gym.Wrapper):
     def __init__(self, env, time_limit=500):
         gym.Wrapper.__init__(self, env)
@@ -106,6 +98,14 @@ class VecIRLRewardEnv(VecEnvWrapper):
         self.venv.step_wait()
 
 
+class OneHotDecodingEnv(gym.Wrapper):
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
+
+    def step(self, one_hot_actions):
+        return self.env.step(np.argmax(one_hot_actions, axis=0))
+
+
 class VecOneHotEncodingEnv(VecEnvWrapper):
     def __init__(self, venv, dim=6):
         VecEnvWrapper.__init__(self, venv)
@@ -120,13 +120,23 @@ class VecOneHotEncodingEnv(VecEnvWrapper):
     def step_wait(self):
         self.venv.step_wait()
 
+class DummyVecEnvWrapper(VecEnvWrapper):
+    def step(self, actions):
+        return self.venv.step(actions)
+
+    def reset(self):
+        return self.venv.reset()
+
+    def step_wait(self):
+        return self.venv.step_wait()
+
 easy_env_modifiers = {
     'env_modifiers': [
-        lambda env: wrap_deepmind(env, frame_stack=False),
+        lambda env: wrap_deepmind(env, frame_stack=False, clip_rewards=False),
         wrap_env_with_args(TimeLimitEnv, time_limit=5000)
     ],
     'vec_env_modifiers': [
-        wrap_env_with_args(VecFrameStack, nstack=4)
+        wrap_env_with_args(DummyVecEnvWrapper)
     ]
 }
 
@@ -139,8 +149,7 @@ atari_modifiers = {
     'env_modifiers': [
         wrap_env_with_args(NoopResetEnv, noop_max=30),
         wrap_env_with_args(MaxAndSkipEnv, skip=4),
-        functools.partial(wrap_deepmind, episode_life=False),
-        #wrap_env_with_args(TimeLimitEnv, time_limit=5000)
+        functools.partial(wrap_deepmind, episode_life=False, frame_stack=False),
     ],
     'vec_env_modifiers': [
         wrap_env_with_args(VecFrameStack, nstack=4)
