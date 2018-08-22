@@ -5,8 +5,6 @@ from baselines.common import explained_variance
 from baselines.ppo2.ppo2 import constfn, safemean
 from baselines.ppo2 import ppo2
 
-from rllab.sampler.base import BaseSampler
-
 from . import policies, utils
 from .sampling import PPOSample
 
@@ -75,7 +73,6 @@ def print_log(
     logger.logkv("explained_variance", float(ev))
     logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
     logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
-    print(safemean([epinfo['r'] for epinfo in epinfobuf]))
     logger.logkv('time_elapsed', tnow - tfirststart)
     for (lossval, lossname) in zip(lossvals, model.loss_names):
         logger.logkv(lossname, lossval)
@@ -155,7 +152,7 @@ def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
                 trajectories[i]
 
 
-class Runner(ppo2.AbstractEnvRunner, BaseSampler):
+class Runner(ppo2.AbstractEnvRunner):
     """
     This is the PPO2 runner, but splitting the sampling and processing stage up
     more explicitly
@@ -176,10 +173,26 @@ class Runner(ppo2.AbstractEnvRunner, BaseSampler):
             mb_values.append(values)
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
+
+            should_show = False # np.random.random() > .95
+            if should_show:
+                print()
+                obs_summaries = '\t'.join([f"{o[0,0,0]}{o[0,-1,0]}" for o in self.obs])
+                act_summaries = '\t'.join([str(a) for a in actions])
+                print(f"State:\t{obs_summaries}")
+                print(f"Action:\t{act_summaries}")
+
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+
+            if should_show:
+                rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
+                print(f"Reward:\t{rew}")
+                print()
+
             for info in infos:
                 maybeepinfo = info.get('episode')
-                if maybeepinfo: epinfos.append(maybeepinfo)
+                if maybeepinfo:
+                    epinfos.append(maybeepinfo)
             mb_rewards.append(rewards)
 
         return PPOSample(
@@ -320,6 +333,10 @@ class Learner:
     def mean_reward(self):
         return safemean([epinfo['r'] for epinfo in self._epinfobuf])
 
+    @property
+    def mean_length(self):
+        return safemean([epinfo['l'] for epinfo in self._epinfobuf])
+
     def obtain_samples(self, itr):
         # Run the model on the environments
         self._run_info = self.runner.run()
@@ -339,6 +356,7 @@ class Learner:
         nbatch_train = self.nbatch // self.batching_config.nminibatches
         tstart = time.time()
         frac = 1.0 - (self._update - 1.0) / self.nupdates
+        assert frac > 0.0
         lrnow = self.lr(frac)
         cliprangenow = self.cliprange(frac)
 

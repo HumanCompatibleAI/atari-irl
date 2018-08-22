@@ -3,6 +3,7 @@ from arguments import add_atari_args, add_trajectory_args, add_irl_args, env_con
 import argparse
 from baselines import logger
 import tensorflow as tf
+import pickle
 
 
 def train_airl(args):
@@ -15,26 +16,30 @@ def train_airl(args):
     )
     tf_cfg.gpu_options.allow_growth = True
 
-    import pickle
-    ts = pickle.load(open(args.trajectories_file, 'rb'))
+    logger.configure()
+    reward, policy_params = irl.airl(
+        logger.get_dir(),
+        tf_cfg=tf_cfg,
+        training_cfg={
+            'n_itr': args.n_iter,
+            'batch_size': args.batch_size,
+            'entropy_weight': args.entropy_wt
+        },
+        env_config={
+            'env_name': args.env,
+            'n_envs': args.num_envs,
+            'seed': args.seed,
+            'one_hot_code': args.one_hot_code
+        },
+        policy_cfg={},
+        reward_model_cfg={
+            'expert_trajs': pickle.load(open(args.trajectories_file, 'rb'))
+        },
+        ablation=args.ablation
+    )
 
-    with env_context_for_args(args) as context:
-        logger.configure()
-        reward, policy_params = irl.airl(
-            context.environments, ts, args.irl_seed, logger.get_dir(),
-            tf_cfg=tf_cfg,
-            training_cfg={
-                'n_itr': args.n_iter,
-                'batch_size': args.batch_size,
-                'entropy_weight': args.entropy_wt
-            },
-            policy_cfg=irl.policy_config(),
-            reward_model_cfg=irl.reward_model_config(),
-            ablation=args.ablation
-        )
-
-        pickle.dump(policy_params, open(args.irl_policy_file, 'wb'))
-        pickle.dump(reward, open(args.irl_reward_file, 'wb'))
+    pickle.dump(policy_params, open(args.irl_policy_file, 'wb'))
+    pickle.dump(reward, open(args.irl_reward_file, 'wb'))
 
 
 if __name__ == '__main__':

@@ -41,14 +41,6 @@ def atari_setup(env):
     return env
 
 
-class OneHotDecodingEnv(gym.Wrapper):
-    def reset(self, **kwargs):
-        return self.env.reset(**kwargs)
-
-    def step(self, one_hot_actions):
-        return self.env.step(np.argmax(one_hot_actions, axis=0))
-
-
 class TimeLimitEnv(gym.Wrapper):
     def __init__(self, env, time_limit=500):
         gym.Wrapper.__init__(self, env)
@@ -91,19 +83,35 @@ class VecIRLRewardEnv(VecEnvWrapper):
 
         assert np.sum(_) == 0
 
-        rewards = tf.get_default_session(
-        ).run(self.reward_network.reward, feed_dict={
-            self.reward_network.act_t: acts,
-            self.reward_network.obs_t: obs
-        })
+        if self.prev_obs is None:
+            rewards = np.zeros(obs.shape[0])
+        else:
+            assert not self.reward_network.score_discrim
+            rewards = tf.get_default_session(
+            ).run(self.reward_network.reward, feed_dict={
+                self.reward_network.act_t: acts,
+                self.reward_network.obs_t: self.prev_obs
+            })[:, 0]
+
+        self.prev_obs = obs
+
         assert len(rewards) == len(obs)
-        return obs, rewards.reshape(rewards.shape[0]), done, info
+        return obs, rewards, done, info
 
     def reset(self):
+        self.prev_obs = None
         return self.venv.reset()
 
     def step_wait(self):
         self.venv.step_wait()
+
+
+class OneHotDecodingEnv(gym.Wrapper):
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
+
+    def step(self, one_hot_actions):
+        return self.env.step(np.argmax(one_hot_actions, axis=0))
 
 
 class VecOneHotEncodingEnv(VecEnvWrapper):
@@ -120,13 +128,23 @@ class VecOneHotEncodingEnv(VecEnvWrapper):
     def step_wait(self):
         self.venv.step_wait()
 
+class DummyVecEnvWrapper(VecEnvWrapper):
+    def step(self, actions):
+        return self.venv.step(actions)
+
+    def reset(self):
+        return self.venv.reset()
+
+    def step_wait(self):
+        return self.venv.step_wait()
+
 easy_env_modifiers = {
     'env_modifiers': [
-        lambda env: wrap_deepmind(env, frame_stack=False),
+        lambda env: wrap_deepmind(env, frame_stack=False, clip_rewards=False),
         wrap_env_with_args(TimeLimitEnv, time_limit=5000)
     ],
     'vec_env_modifiers': [
-        wrap_env_with_args(VecFrameStack, nstack=4)
+        wrap_env_with_args(DummyVecEnvWrapper)
     ]
 }
 
@@ -139,8 +157,7 @@ atari_modifiers = {
     'env_modifiers': [
         wrap_env_with_args(NoopResetEnv, noop_max=30),
         wrap_env_with_args(MaxAndSkipEnv, skip=4),
-        functools.partial(wrap_deepmind, episode_life=False),
-        #wrap_env_with_args(TimeLimitEnv, time_limit=5000)
+        functools.partial(wrap_deepmind, episode_life=False, frame_stack=False),
     ],
     'vec_env_modifiers': [
         wrap_env_with_args(VecFrameStack, nstack=4)
@@ -283,6 +300,12 @@ class JustPress1Environment(gym.Env):
 class SimonSaysEnvironment(JustPress1Environment):
     def __init__(self):
         super().__init__()
+
+        self.correct = np.zeros(self.observation_space.shape).astype(np.uint8)
+        self.incorrect = np.zeros(self.observation_space.shape).astype(np.uint8)
+        boundary = self.correct.shape[1] // 2
+        self.correct[:,:boundary] = 255
+        self.incorrect[:,boundary:] = 255
         
         self.next_move = self.np_random.randint(2)
         self.obs_map = {
@@ -296,22 +319,29 @@ class SimonSaysEnvironment(JustPress1Environment):
         return isinstance(n, np.int64) or isinstance(n, int)
 
     def set_next_move_get_obs(self):
+        assert self.next_move is None
         self.next_move = self.np_random.randint(2)
         return self.obs_map[self.next_move]
 
     def step(self, action):
         reward = 0.0
         self.turns += 1
-        if (
-            self.isint(action) and action == self.next_move or
-            not self.isint(action) and action[0] == self.next_move
-        ):
-            reward = 1.0
-        obs = self.set_next_move_get_obs()
+
+        if self.next_move is not None:
+            if self.isint(action) and action == self.next_move:
+                reward = 2.0
+                obs = self.correct
+            else:
+                obs = self.incorrect
+            self.next_move = None
+        else:
+            obs = self.set_next_move_get_obs()
+
         return obs, reward, self.turns >= 100, {'next_move': self.next_move}
 
     def reset(self):
         self.turns = 0
+        self.next_move = None
         return self.set_next_move_get_obs()
 
 

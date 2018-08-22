@@ -1,8 +1,11 @@
 import numpy as np
 import tensorflow as tf
-from . import utils
+from . import utils, training
 from collections import namedtuple
 
+from rllab.misc.overrides import overrides
+from rllab.sampler.base import BaseSampler
+from sandbox.rocky.tf.samplers.vectorized_sampler import VectorizedSampler
 
 # This is a PPO Batch that the OpenAI Baselines PPO code uses as its underlying
 # representation
@@ -58,6 +61,8 @@ class Trajectory:
         self.agent_infos['neglogpacs'].append(neglogpac)
         self.agent_infos['prob'].append(prob)
 
+        assert np.isclose(1.0, prob.sum())
+
     def finalize(self):
         assert not self.is_finalized
         self.observations = np.asarray(self.observations)
@@ -82,7 +87,6 @@ class Trajectories:
         # a proper roundtrip is going to be slower than doing this
         if self.ppo_sample is not None:
             return self.ppo_sample
-
 
 class PPOSample:
     """
@@ -183,39 +187,49 @@ class PPOSample:
         return Trajectories(buffer, self)
 
 
-# This code isn't actually used right now, but it is tested so I'm keeping it
-# around
-def invert_ppo_sample_raveling(ppo_samples, num_envs=8):
-    return ppo_samples.reshape(
-        num_envs, ppo_samples.shape[0] // num_envs,
-        *ppo_samples.shape[1:]
-    ).swapaxes(1, 0)
+class PPOBatchSampler(BaseSampler):
+    # If you want to use the baselines PPO sampler as a sampler for the
+    # airl interfaced code, use this.
+    def __init__(self, algo):
+        super(PPOBatchSampler, self).__init__(algo)
+        assert isinstance(algo.policy.learner, training.Learner)
+        self.cur_sample = None
+
+    def start_worker(self):
+        pass
+
+    def shutdown_worker(self):
+        pass
+
+    def obtain_samples(self, itr):
+        self.cur_sample = self.algo.policy.learner.runner.sample()
+        samples = self.cur_sample.to_trajectories()
+        self.algo.irl_model._insert_next_state(samples)
+        return samples
+
+    def process_samples(self, itr, paths):
+        ppo_batch = self.cur_sample.to_ppo_batch()
+        self.algo.policy.learner._run_info = ppo_batch
+        self.algo.policy.learner._epinfobuf.extend(ppo_batch.epinfos)
+        return ppo_batch
 
 
-def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
-    OBS_IDX = 0
-    ACTS_IDX = 3
-
-    obs = invert_ppo_sample_raveling(ppo_samples[OBS_IDX], num_envs=num_envs)
-    acts = invert_ppo_sample_raveling(ppo_samples[ACTS_IDX], num_envs=num_envs)
-
-    T = obs.shape[0]
-    observations = [[] for _ in range(num_envs)]
-    actions = [[] for _ in range(num_envs)]
-
-    assert acts.shape[0] == T
-    for t in range(T):
-        for i, (o, a) in enumerate(zip(obs[t], acts[t])):
-            observations[i].append(o)
-            actions[i].append(a)
-
-    trajectories = [
-        {
-            'observations': np.array(observations[i]),
-            'actions': utils.one_hot(actions[i], 6)
-        }
-        for i in range(num_envs)
-    ]
-    np.random.shuffle(trajectories)
-
-    return trajectories
+class FullTrajectorySampler(VectorizedSampler):
+    # If you want to use the RLLab sampling code with a baselines-interfaced
+    # policy, use this.
+    @overrides
+    def process_samples(self, itr, paths):
+        """
+        We need to go from paths to PPOBatch shaped samples. This does it in a
+        way that's pretty hacky and doesn't crash, but isn't overall promising,
+        because when you tune the PPO hyperparameters to look at single full
+        trajectories that doesn't work well either
+        """
+        print("Processing samples, albeit hackily!")
+        samples_data = self.algo.policy.learner.runner.process_trajectory(
+            paths[0]
+        )
+        T = samples_data[0].shape[0]
+        return PPOBatch(
+            *([data[:512] for data in samples_data[:-2]] + [None, None])
+        )
