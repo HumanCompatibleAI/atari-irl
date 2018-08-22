@@ -216,7 +216,7 @@ def wrap_action_space(action_space):
 
 
 # Copied from https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
-# this hacks around airl being built on top of rllib, and not using gym
+# this hacks around airl being built on top of rllab, and not using gym
 # environments
 class VecGymEnv(Env):
     def __init__(self, venv):

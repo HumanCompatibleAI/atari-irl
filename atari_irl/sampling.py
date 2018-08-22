@@ -63,10 +63,10 @@ class Trajectory:
 
         assert np.isclose(1.0, prob.sum())
 
-    def finalize(self):
+    def finalize(self, one_hot_code=True):
         assert not self.is_finalized
         self.observations = np.asarray(self.observations)
-        self.actions = utils.one_hot(self.actions, 6)
+        self.actions = utils.one_hot(self.actions, 6) if one_hot_code else np.asarray(self.actions)
         self.rewards = np.asarray(self.rewards)
         self.is_finalized = True
 
@@ -120,6 +120,7 @@ class PPOSample:
 
         self.probabilities = self._get_sample_probabilities()
 
+
     def to_ppo_batch(self) -> PPOBatch:
         return PPOBatch(*self.runner.process_ppo_samples(
             self.obs, self.rewards, self.actions, self.values, self.dones,
@@ -158,13 +159,13 @@ class PPOSample:
         tm = self.runner.model.train_model
         ps = np.asarray([
             # we weirdly don't have direct access to the probabilities anywhere
-            # so we need to construct this node from teh logits
+            # so we need to construct this node from the logits
             sess.run(tf.nn.softmax(tm.pd.logits), {tm.X: train_batch_obs})
             for train_batch_obs in train_batched_obs
         ])
         return self._ravel_train_batch_to_time_env_batch(ps)
 
-    def to_trajectories(self) -> 'Trajectories':
+    def to_trajectories(self, one_hot_code=True) -> 'Trajectories':
         T = len(self.obs)
         num_envs = self.obs[0].shape[0]
         buffer = [Trajectory() for _ in range(num_envs)]
@@ -182,7 +183,7 @@ class PPOSample:
                 )
 
         for traj in buffer:
-            traj.finalize()
+            traj.finalize(one_hot_code=one_hot_code)
 
         return Trajectories(buffer, self)
 
@@ -190,10 +191,11 @@ class PPOSample:
 class PPOBatchSampler(BaseSampler):
     # If you want to use the baselines PPO sampler as a sampler for the
     # airl interfaced code, use this.
-    def __init__(self, algo):
+    def __init__(self, algo, one_hot_code=True):
         super(PPOBatchSampler, self).__init__(algo)
         assert isinstance(algo.policy.learner, training.Learner)
         self.cur_sample = None
+        self.one_hot_code = one_hot_code
 
     def start_worker(self):
         pass
@@ -203,7 +205,9 @@ class PPOBatchSampler(BaseSampler):
 
     def obtain_samples(self, itr):
         self.cur_sample = self.algo.policy.learner.runner.sample()
-        samples = self.cur_sample.to_trajectories()
+        samples = self.cur_sample.to_trajectories(
+            one_hot_code=self.one_hot_code
+        )
         self.algo.irl_model._insert_next_state(samples)
         return samples
 

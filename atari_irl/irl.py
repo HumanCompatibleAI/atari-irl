@@ -70,7 +70,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         )
 
         baselines_venv = envs._wrapped_env.venv
-        for fn in baseline_wrappers + [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]:
+        for fn in baseline_wrappers:
             print("Wrapping baseline with function")
             baselines_venv = fn(baselines_venv)
 
@@ -489,7 +489,7 @@ def add_ablation(cfg, ablation_modifiers):
 def get_training_kwargs(
         *,
         venv,
-        ablation='normal',
+        ablation='normal', one_hot_code=True,
         reward_model_cfg={}, policy_cfg={}, training_cfg={}
 ):
     envs = venv
@@ -518,6 +518,8 @@ def get_training_kwargs(
     baseline_wrappers = ablation_modifiers.policy_modifiers.pop(
         'baseline_wrappers'
     )
+    if one_hot_code:
+        baseline_wrappers += [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]
     training_kwargs = dict(
         env=envs,
         policy=make_irl_policy(
@@ -525,7 +527,6 @@ def get_training_kwargs(
             envs=envs, baseline_wrappers=baseline_wrappers
         ),
         irl_model=irl_model,
-        sampler_args={},
         baseline=ZeroBaseline(env_spec=envs.spec),
         ablation=ablation,
     )
@@ -678,19 +679,23 @@ def airl(
         tf_cfg, env_config, reward_model_cfg={}, policy_cfg={}, training_cfg={},
         ablation='normal'
 ):
+    one_hot_code = env_config['one_hot_code']
     with IRLContext(tf_cfg, env_config) as context:
         training_kwargs, policy_cfg, reward_model_cfg, training_cfg = get_training_kwargs(
             venv=context.env_context.environments,
+            one_hot_code=one_hot_code,
             reward_model_cfg=reward_model_cfg,
             policy_cfg=policy_cfg,
             training_cfg=training_cfg,
             ablation=ablation,
         )
         print("Training arguments: ", training_kwargs)
-        training_kwargs['sampler_args'] = {}
         algo = IRLRunner(
             **training_kwargs,
-            sampler_cls=sampling.PPOBatchSampler,
+            sampler_cls=VectorizedSampler#sampling.PPOBatchSampler,
+            #sampler_args={
+            #    'one_hot_code': one_hot_code
+            #}
         )
         irl_model = algo.irl_model
         policy = algo.policy

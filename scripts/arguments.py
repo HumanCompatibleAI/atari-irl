@@ -78,6 +78,12 @@ def add_irl_args(parser):
         help='entropy_weight',
         type=float, default=0.01
     )
+    parser.add_argument(
+        '--input_type',
+        help='input representation to the policy',
+        choices=['image', 'vector'],
+        type=str, default='image'
+    )
 
 
 def env_context_for_args(args):
