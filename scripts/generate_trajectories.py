@@ -1,13 +1,21 @@
-from atari_irl import utils, policies
+from atari_irl import utils, policies, environments
 import pickle
 from arguments import add_atari_args, add_trajectory_args, add_expert_args, tf_context_for_args, env_context_for_args
 import argparse
 
 
 def generate_trajectories(args):
+    # environments are not one hot coded, so we don't wrap this
+    env_modifiers = environments.env_mapping[args.env]
+
     utils.logger.configure()
-    with tf_context_for_args(args):
-        with env_context_for_args(args) as context:
+    with utils.TfContext(ncpu=args.n_cpu):
+        with utils.EnvironmentContext(
+            env_name=args.env,
+            n_envs=args.num_envs,
+            seed=args.seed,
+            **env_modifiers
+        ) as context:
             policy = policies.EnvPolicy.load(args.expert_path, context.environments)
             ts = policies.sample_trajectories(
                 model=policy.model,
