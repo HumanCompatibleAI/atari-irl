@@ -11,11 +11,14 @@ from rllab.core.serializable import Serializable
 from sandbox.rocky.tf.policies.base import StochasticPolicy
 from sandbox.rocky.tf.distributions.categorical import Categorical
 from sandbox.rocky.tf.spaces.box import Box
+from sandbox.rocky.tf.samplers.vectorized_sampler import VectorizedSampler
 
 from airl.algos.irl_trpo import IRLTRPO
 from airl.models.airl_state import AIRL
 from airl.utils.log_utils import rllab_logdir
 from airl.models.fusion_manager import RamFusionDistr
+from airl.models import architectures
+from airl.utils.math_utils import gauss_log_pdf, categorical_log_pdf
 
 from baselines.ppo2.policies import CnnPolicy, nature_cnn, fc
 
@@ -29,6 +32,9 @@ import os
 import joblib
 import time
 from collections import defaultdict, namedtuple
+
+DIST_GAUSSIAN = 'gaussian'
+DIST_CATEGORICAL = 'categorical'
 
 
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
@@ -119,9 +125,10 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         return one_hot(action, 6), dict(prob=self._f_dist(obs))
 
     def _get_actions_right_shape(self, observations):
+        import pdb; pdb.set_trace()
         actions, values, _, neglogpacs = self.act_model.step(observations)
         return (
-            one_hot(actions, 6),
+            actions,
             dict(
                 prob=self._f_dist(observations),
                 values=values.reshape(self.baselines_venv.num_envs, 1),
@@ -270,6 +277,12 @@ def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     output = fc(h, 'output', nh=dout, init_scale=np.sqrt(2))
     return output
 
+
+def relu_net(x, actions=None, **kwargs):
+    rew_input = x
+    if actions is not None:
+        rew_input = tf.concat([x, actions], axis=1)
+    return architectures.relu_net(rew_input, **kwargs)
 
 class AtariAIRL(AIRL):
     """
@@ -438,9 +451,11 @@ def training_config(
 
 def make_irl_policy(policy_cfg, *, envs, baseline_wrappers=None):
     policy_fn = policy_cfg.pop('policy')
+    blah = policy_cfg.pop('policy_model')
     return policy_fn(
-        envs=envs,
-        baseline_wrappers=baseline_wrappers,
+        #envs=envs,
+        #baseline_wrappers=baseline_wrappers,
+        env_spec=envs.spec,
         **policy_cfg
     )
 

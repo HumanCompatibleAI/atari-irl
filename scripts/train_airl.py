@@ -5,6 +5,8 @@ from baselines import logger
 import tensorflow as tf
 import pickle
 
+from baselines.ppo2.policies import MlpPolicy, CnnPolicy
+from sandbox.rocky.tf.policies.gaussian_mlp_policy import GaussianMLPPolicy
 
 def train_airl(args):
     tf_cfg = tf.ConfigProto(
@@ -17,6 +19,12 @@ def train_airl(args):
     tf_cfg.gpu_options.allow_growth = True
 
     logger.configure()
+    policy_cfg = {
+        'policy': irl.DiscreteIRLPolicy,
+        'policy_model': CnnPolicy
+    }
+    if args.input_type == 'vector':
+        policy_cfg = {'policy': GaussianMLPPolicy}
     reward, policy_params = irl.airl(
         logger.get_dir(),
         tf_cfg=tf_cfg,
@@ -31,9 +39,11 @@ def train_airl(args):
             'seed': args.seed,
             'one_hot_code': args.one_hot_code
         },
-        policy_cfg={},
+        policy_cfg=policy_cfg,
         reward_model_cfg={
-            'expert_trajs': pickle.load(open(args.trajectories_file, 'rb'))
+            'expert_trajs': pickle.load(open(args.trajectories_file, 'rb')),
+            'reward_arch': irl.cnn_net if args.input_type == 'image' else irl.relu_net,
+            'value_fn_arch': irl.cnn_net if args.input_type == 'image' else irl.relu_net
         },
         ablation=args.ablation
     )
