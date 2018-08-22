@@ -356,6 +356,7 @@ class Learner:
         nbatch_train = self.nbatch // self.batching_config.nminibatches
         tstart = time.time()
         frac = 1.0 - (self._update - 1.0) / self.nupdates
+        assert frac > 0.0
         lrnow = self.lr(frac)
         cliprangenow = self.cliprange(frac)
 
