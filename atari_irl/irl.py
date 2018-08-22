@@ -247,13 +247,10 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         learner doesn't actually get its state repaired, and so for instances
         the step size will be different than it was when you saved.
         """
-        model = make_irl_policy(
-            **data['config'],
-            envs=envs,
-            baseline_wrappers=baseline_wrappers
-        )
-        model.set_params(data['tf_params'])
-        return model
+        for key, value in data['config'].items():
+            if self.init_args[key] != value:
+                print(f"Warning: different values for {key}")
+        self.restore_param_values(data['tf_params'])
 
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
@@ -303,7 +300,7 @@ class AtariAIRL(AIRL):
             score_discrim=score_discrim,
             discount=discount,
             state_only=state_only,
-            max_its=max_itrs,
+            max_itrs=max_itrs,
             fusion=fusion,
             name=name
         )
@@ -392,9 +389,10 @@ def reward_model_config(
         env_spec,
         expert_trajs,
         model=AtariAIRL,
-        state_only=False,
+        state_only=True,
         reward_arch=cnn_net,
-        value_fn_arch=cnn_net
+        value_fn_arch=cnn_net,
+        score_discrim=False
 ):
     return dict(
         model=model,
@@ -402,7 +400,8 @@ def reward_model_config(
         reward_arch=reward_arch,
         value_fn_arch=value_fn_arch,
         env_spec=env_spec,
-        expert_trajs=expert_trajs
+        expert_trajs=expert_trajs,
+        score_discrim=score_discrim
     )
 
 
@@ -414,7 +413,7 @@ def training_config(
         entropy_weight=0.01,
         step_size=0.01,
         irl_model_wt=1.0,
-        zero_environment_reward=True
+        zero_environment_reward=True,
 ):
     return dict(
         n_itr=n_itr,
@@ -473,7 +472,7 @@ def add_ablation(cfg, ablation_modifiers):
         if key in cfg:
             print(
                 f"Warning: Overriding provided value {cfg[key]}"
-                f"for {key} with {ablation_cfg[key]} for ablation"
+                f"for {key} with {ablation_modifiers[key]} for ablation"
             )
     cfg.update(ablation_modifiers)
     return cfg
@@ -661,12 +660,11 @@ class IRLContext:
 
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(
-        trajectories, log_dir,
+        log_dir,
         *,
         tf_cfg, env_config, reward_model_cfg={}, policy_cfg={}, training_cfg={},
         ablation='normal'
 ):
-    reward_model_cfg['expert_trajs'] = trajectories
     with IRLContext(tf_cfg, env_config) as context:
         training_kwargs, policy_cfg, reward_model_cfg, training_cfg = get_training_kwargs(
             venv=context.env_context.environments,
