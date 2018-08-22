@@ -83,15 +83,23 @@ class VecIRLRewardEnv(VecEnvWrapper):
 
         assert np.sum(_) == 0
 
-        rewards = tf.get_default_session(
-        ).run(self.reward_network.reward, feed_dict={
-            self.reward_network.act_t: acts,
-            self.reward_network.obs_t: obs
-        })
+        if self.prev_obs is None:
+            rewards = np.zeros(obs.shape[0])
+        else:
+            assert not self.reward_network.score_discrim
+            rewards = tf.get_default_session(
+            ).run(self.reward_network.reward, feed_dict={
+                self.reward_network.act_t: acts,
+                self.reward_network.obs_t: self.prev_obs
+            })[:, 0]
+
+        self.prev_obs = obs
+
         assert len(rewards) == len(obs)
-        return obs, rewards.reshape(rewards.shape[0]), done, info
+        return obs, rewards, done, info
 
     def reset(self):
+        self.prev_obs = None
         return self.venv.reset()
 
     def step_wait(self):
