@@ -538,6 +538,7 @@ class IRLRunner(IRLTRPO):
     def __init__(self, *args, ablation='none', **kwargs):
         IRLTRPO.__init__(self, *args, **kwargs)
         self.ablation = ablation
+        self.skip_policy_update = self.ablation == 'train_discriminator'
         self.skip_discriminator = self.ablation == 'train_rl'
 
     @overrides
@@ -595,16 +596,20 @@ class IRLRunner(IRLTRPO):
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
             with logger.prefix('itr #%d | ' % itr):
+                logger.record_tabular('Itr', itr)
+
                 logger.log("Obtaining samples...")
                 paths = self.obtain_samples(itr)
 
                 logger.log("Processing samples...")
-                paths = self.compute_irl(paths, itr=itr)
+                if not self.skip_discriminator:
+                    paths = self.compute_irl(paths, itr=itr)
                 returns.append(self.log_avg_returns(paths))
                 samples_data = self.process_samples(itr, paths)
 
                 logger.log("Optimizing policy...")
-                self.optimize_policy(itr, samples_data)
+                if not self.skip_policy_update:
+                    self.optimize_policy(itr, samples_data)
 
                 if itr % 10 == 0:
                     logger.log("Saving snapshot...")
