@@ -41,8 +41,6 @@ def train_expert(args):
                 mean_reward=learner.mean_reward, update=update, seed=args.seed
             )
 
-            policies.run_policy(model=policy.model, environments=policy.envs)
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
