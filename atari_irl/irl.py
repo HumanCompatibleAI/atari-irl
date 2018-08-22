@@ -473,7 +473,8 @@ def reward_model_config(
         state_only=False,
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
-        score_discrim=False
+        score_discrim=False,
+        max_itrs=100
 ):
     return dict(
         model=model,
@@ -482,7 +483,8 @@ def reward_model_config(
         value_fn_arch=value_fn_arch,
         env_spec=env_spec,
         expert_trajs=expert_trajs,
-        score_discrim=score_discrim
+        score_discrim=score_discrim,
+        max_itrs=max_itrs
     )
 
 
@@ -505,7 +507,7 @@ def training_config(
         step_size=step_size,
         store_paths=False,
         irl_model_wt=irl_model_wt,
-        zero_environment_reward=zero_environment_reward,
+        zero_environment_reward=zero_environment_reward
     )
 
 
