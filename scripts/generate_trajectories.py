@@ -7,6 +7,8 @@ import argparse
 def generate_trajectories(args):
     # environments are not one hot coded, so we don't wrap this
     env_modifiers = environments.env_mapping[args.env]
+    if args.expert_type == 'irl':
+        env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
 
     utils.logger.configure()
     with utils.TfContext(ncpu=args.n_cpu):
@@ -18,20 +20,24 @@ def generate_trajectories(args):
         ) as context:
             if args.expert_type == 'baselines_ppo':
                 policy = policies.EnvPolicy.load(args.expert_path, context.environments)
+                model = policy.model
+                envs = policy.envs
             elif args.expert_type == 'irl':
-                policy = irl.make_irl_policy(
+                irl_policy = irl.make_irl_policy(
                     irl.policy_config(
                         init_location=args.expert_path
                     ),
                     envs=irl.rllab_wrap_venv(context.environments),
                     baseline_wrappers=[]
-                ).learner.policy
+                )
+                model = irl_policy.learner.policy.model
+                envs = irl_policy.learner.runner.env
             else:
                 raise NotImplementedError
 
             ts = policies.sample_trajectories(
-                model=policy.model,
-                environments=policy.envs,
+                model=model,
+                environments=envs,
                 n_trajectories=args.num_trajectories,
                 one_hot_code=args.one_hot_code,
                 render=args.render
