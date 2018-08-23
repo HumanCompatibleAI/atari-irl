@@ -35,7 +35,8 @@ def train_airl(args):
             'init_location': None if args.init_location == 'none' else args.init_location
         },
         reward_model_cfg={
-            'expert_trajs': pickle.load(open(args.trajectories_file, 'rb'))
+            'expert_trajs': pickle.load(open(args.trajectories_file, 'rb')),
+            'state_only': args.state_only
         },
         ablation=args.ablation
     )
