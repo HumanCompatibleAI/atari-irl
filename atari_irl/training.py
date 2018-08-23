@@ -344,7 +344,6 @@ class Learner:
         self._run_info = self.runner.run()
         self._epinfobuf.extend(self._run_info.epinfos)
         self._itr = itr
-        #import pdb; pdb.set_trace()
 
     def optimize_policy(self, itr):
         assert self._itr == itr
