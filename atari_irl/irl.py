@@ -553,9 +553,28 @@ def get_ablation_modifiers(*, irl_model, ablation):
     ))
     ablations['train_rl'] = Ablation(
         policy_modifiers={'baseline_wrappers': []},
-        training_modifiers={'irl_model_wt': 0.0, 'zero_environment_reward': True}
+        training_modifiers={
+            'irl_model_wt': 0.0,
+            # TODO(Aaron): Figure out if this should be false...
+            'zero_environment_reward': True,
+            'skip_discriminator': True
+        }
     )
-
+    ablations['train_discriminator'] = Ablation(
+        policy_modifiers={'baseline_wrappers': []},
+        training_modifiers={
+            'skip_policy_update': True
+        }
+    )
+    ablations['run_expert'] = Ablation(
+        policy_modifiers={'baseline_wrappers': []},
+        training_modifiers={
+            'irl_model_wt': 0.0,
+            'zero_envvironment_reward': True,
+            'skip_discriminator': True,
+            'skip_policy_update': True
+        }
+    )
     return ablations[ablation]
 
 
@@ -629,11 +648,18 @@ class IRLRunner(IRLTRPO):
     [ ] It doesn't share the sample buffer between the discriminator and policy
     [ ] It doesn't work on MuJoCo
     """
-    def __init__(self, *args, ablation='none', **kwargs):
+    def __init__(
+            self,
+            *args,
+            ablation='none',
+            skip_policy_update=False,
+            skip_discriminator=False,
+            **kwargs
+    ):
         IRLTRPO.__init__(self, *args, **kwargs)
         self.ablation = ablation
-        self.skip_policy_update = self.ablation == 'train_discriminator'
-        self.skip_discriminator = self.ablation == 'train_rl'
+        self.skip_policy_update = skip_policy_update
+        self.skip_discriminator = skip_discriminator
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):

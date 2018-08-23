@@ -76,7 +76,7 @@ def add_irl_args(parser):
     parser.add_argument(
         '--ablation',
         help='what ablation to run',
-        choices=['none', 'train_rl', 'train_discriminator'],
+        choices=['none', 'train_rl', 'train_discriminator', 'run_expert'],
         type=str, default='none'
     )
     parser.add_argument(
