@@ -184,6 +184,8 @@ class Runner(ppo2.AbstractEnvRunner):
 
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
 
+            self.env.render()
+
             if should_show:
                 rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
                 print(f"Reward:\t{rew}")
@@ -342,7 +344,6 @@ class Learner:
         self._run_info = self.runner.run()
         self._epinfobuf.extend(self._run_info.epinfos)
         self._itr = itr
-        #import pdb; pdb.set_trace()
 
     def optimize_policy(self, itr):
         assert self._itr == itr
