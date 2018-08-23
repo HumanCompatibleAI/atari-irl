@@ -693,14 +693,6 @@ class IRLRunner(IRLTRPO):
         self.policy.learner._itr = itr
         self.policy.learner._run_info = samples_data
         self.policy.learner.optimize_policy(itr)
-        logger.record_tabular(
-            "PolicyBufferOriginalTaskRewardMean",
-            self.policy.learner.mean_reward
-        )
-        logger.record_tabular(
-            "PolicyBufferEpisodeLengthMean",
-            self.policy.learner.mean_length
-        )
 
     def train(self):
         sess = tf.get_default_session()
@@ -721,15 +713,26 @@ class IRLRunner(IRLTRPO):
                 logger.log("Obtaining samples...")
                 paths = self.obtain_samples(itr)
 
-                logger.log("Processing samples...")
                 if not self.skip_discriminator:
+                    logger.log("Optimizing discriminator...")
                     paths = self.compute_irl(paths, itr=itr)
+
+                logger.log("Processing samples...")
                 returns.append(self.log_avg_returns(paths))
                 samples_data = self.process_samples(itr, paths)
 
-                logger.log("Optimizing policy...")
                 if not self.skip_policy_update:
+                    logger.log("Optimizing policy...")
                     self.optimize_policy(itr, samples_data)
+
+                logger.record_tabular(
+                    "PolicyBufferOriginalTaskRewardMean",
+                    self.policy.learner.mean_reward
+                )
+                logger.record_tabular(
+                    "PolicyBufferEpisodeLengthMean",
+                    self.policy.learner.mean_length
+                )
 
                 if itr % 10 == 0:
                     logger.log("Saving snapshot...")
