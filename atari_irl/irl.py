@@ -638,6 +638,10 @@ def get_training_kwargs(
         add_ablation(training_cfg, ablation_modifiers.training_modifiers)
     )
 
+    if policy_cfg['init_location']:
+        snapshot = joblib.load(open(policy_cfg['init_location'], 'rb'))
+        training_kwargs['init_pol_params'] = snapshot['policy_params']['tf_params']
+
     return training_kwargs, policy_cfg, reward_model_cfg, training_cfg
 
 
@@ -698,7 +702,7 @@ class IRLRunner(IRLTRPO):
         sess = tf.get_default_session()
         sess.run(tf.global_variables_initializer())
         if self.init_pol_params is not None:
-            self.policy.set_param_values(self.init_pol_params)
+            self.policy.restore_param_values(self.init_pol_params)
         if self.init_irl_params is not None:
             self.irl_model.set_params(self.init_irl_params)
         self.start_worker()
