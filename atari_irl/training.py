@@ -184,6 +184,8 @@ class Runner(ppo2.AbstractEnvRunner):
 
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
 
+            self.env.render()
+
             if should_show:
                 rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
                 print(f"Reward:\t{rew}")
