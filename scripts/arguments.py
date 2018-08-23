@@ -2,11 +2,11 @@
 from atari_irl import utils, environments
 
 
-def add_bool_feature(parser, name):
+def add_bool_feature(parser, name, default=True):
     feature_parser = parser.add_mutually_exclusive_group(required=False)
     feature_parser.add_argument('--' + name, dest=name, action='store_true')
     feature_parser.add_argument('--no-' + name, dest=name, action='store_false')
-    parser.set_defaults(**{name: True})
+    parser.set_defaults(**{name: default})
 
 
 def add_atari_args(parser):
@@ -41,6 +41,12 @@ def add_expert_args(parser):
         '--nsteps',
         help='length of time in a minibatch step',
         type=int, default=128
+    )
+    parser.add_argument(
+        '--expert_type',
+        help='type of the expert',
+        choices=['baselines_ppo', 'irl'],
+        default='baselines_ppo'
     )
 
 
@@ -83,6 +89,7 @@ def add_irl_args(parser):
         help='location to initialize training from',
         type=str, default='none'
     )
+    add_bool_feature(parser, 'state_only', default=False)
 
 
 def env_context_for_args(args):

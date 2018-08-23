@@ -1,4 +1,4 @@
-from atari_irl import utils, policies, environments
+from atari_irl import utils, policies, environments, irl
 import pickle
 from arguments import add_atari_args, add_trajectory_args, add_expert_args, tf_context_for_args, env_context_for_args
 import argparse
@@ -16,7 +16,19 @@ def generate_trajectories(args):
             seed=args.seed,
             **env_modifiers
         ) as context:
-            policy = policies.EnvPolicy.load(args.expert_path, context.environments)
+            if args.expert_type == 'baselines_ppo':
+                policy = policies.EnvPolicy.load(args.expert_path, context.environments)
+            elif args.expert_type == 'irl':
+                policy = irl.make_irl_policy(
+                    irl.policy_config(
+                        init_location=args.expert_path
+                    ),
+                    envs=irl.rllab_wrap_venv(context.environments),
+                    baseline_wrappers=[]
+                ).learner.policy
+            else:
+                raise NotImplementedError
+
             ts = policies.sample_trajectories(
                 model=policy.model,
                 environments=policy.envs,

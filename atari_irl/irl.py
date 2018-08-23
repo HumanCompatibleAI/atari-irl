@@ -570,15 +570,17 @@ def add_ablation(cfg, ablation_modifiers):
     return cfg
 
 
+def rllab_wrap_venv(envs):
+    return TfEnv(VecGymEnv(envs))
+
+
 def get_training_kwargs(
         *,
         venv,
         ablation='normal',
         reward_model_cfg={}, policy_cfg={}, training_cfg={}
 ):
-    envs = venv
-    envs = VecGymEnv(envs)
-    envs = TfEnv(envs)
+    envs = rllab_wrap_venv(venv)
 
     policy_cfg = policy_config(**policy_cfg)
     reward_model_cfg = reward_model_config(
