@@ -57,7 +57,8 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             name,
             policy_model,
             envs,
-            baseline_wrappers
+            baseline_wrappers,
+            init_location=None
     ):
         Serializable.quick_init(self, locals())
         assert isinstance(envs.action_space, Box)
@@ -67,7 +68,8 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         # wrappers
         self.init_args = dict(
             name=name,
-            policy_model=policy_model
+            policy_model=policy_model,
+            init_location=init_location
         )
 
         baselines_venv = envs._wrapped_env.venv
@@ -104,6 +106,10 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             inputs=[obs_var],
             outputs=self.probs
         )
+
+        if init_location:
+            data = joblib.load(open(init_location, 'rb'))
+            self.restore_from_snapshot(data['policy_params'])
 
     @property
     def vectorized(self):
@@ -221,6 +227,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         param_tensors = self.get_params()
         restores = []
         for tf_tensor, np_array in zip(param_tensors, params):
+            print(tf_tensor, np_array.shape)
             restores.append(tf_tensor.assign(np_array))
         tf.get_default_session().run(restores)
 
@@ -513,14 +520,12 @@ def training_config(
 
 def make_irl_policy(policy_cfg, *, envs, baseline_wrappers=None):
     policy_fn = policy_cfg.pop('policy')
-    init_location = policy_cfg.pop('init_location')
     policy = policy_fn(
         envs=envs,
         baseline_wrappers=baseline_wrappers,
         **policy_cfg
     )
-    if init_location is not None:
-        raise NotImplementedError
+
     return policy
 
 
