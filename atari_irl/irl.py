@@ -261,7 +261,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
                 print(f"Warning: different values for {key}")
         self.restore_param_values(data['tf_params'])
 
-
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
     h = nature_cnn(x, **conv_kwargs)
     activ = tf.nn.relu
@@ -270,6 +269,7 @@ def cnn_net(x, actions=None, dout=1, **conv_kwargs):
         action_size = actions.get_shape()[1].value
         print(actions.get_shape())
         selection = fc(h, 'action_selection', nh=action_size, init_scale=np.sqrt(2))
+
         h = tf.concat([
             tf.multiply(actions, selection),
             actions,
@@ -561,9 +561,9 @@ def get_ablation_modifiers(*, irl_model, ablation):
 
 def add_ablation(cfg, ablation_modifiers):
     for key in ablation_modifiers.keys():
-        if key in cfg:
+        if key in cfg and cfg[key] != ablation_modifiers[key]:
             print(
-                f"Warning: Overriding provided value {cfg[key]}"
+                f"Warning: Overriding provided value {cfg[key]} "
                 f"for {key} with {ablation_modifiers[key]} for ablation"
             )
     cfg.update(ablation_modifiers)
