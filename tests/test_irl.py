@@ -56,11 +56,16 @@ class TestAtariIRL:
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 print("Training arguments: ", training_kwargs)
                 algo = irl.IRLRunner(**training_kwargs)
@@ -71,11 +76,16 @@ class TestAtariIRL:
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=1, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 training_kwargs['batch_size'] = 50
                 print("Training arguments: ", training_kwargs)
@@ -111,11 +121,16 @@ class TestAtariIRL:
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 training_kwargs['batch_size'] = 50
                 print("Training arguments: ", training_kwargs)
@@ -128,12 +143,12 @@ class TestAtariIRL:
                 assert_trajectory_formatted(trajectories.trajectories)
                 roundtrip_sample = trajectories.to_ppo_sample()
 
-                assert ppo_sample.obs == roundtrip_sample.obs
-                assert ppo_sample.rewards == roundtrip_sample.rewards
-                assert ppo_sample.actions == roundtrip_sample.actions
-                assert ppo_sample.values == roundtrip_sample.values
-                assert ppo_sample.dones == roundtrip_sample.dones
-                assert ppo_sample.neglogpacs == roundtrip_sample.neglogpacs
+                assert (ppo_sample.obs == roundtrip_sample.obs).all()
+                assert (ppo_sample.rewards == roundtrip_sample.rewards).all()
+                assert (ppo_sample.actions == roundtrip_sample.actions).all()
+                assert (ppo_sample.values == roundtrip_sample.values).all()
+                assert (ppo_sample.dones == roundtrip_sample.dones).all()
+                assert (ppo_sample.neglogpacs == roundtrip_sample.neglogpacs).all()
                 assert ppo_sample.states == roundtrip_sample.states
                 assert ppo_sample.epinfos == roundtrip_sample.epinfos
                 assert ppo_sample.runner == roundtrip_sample.runner
@@ -142,11 +157,16 @@ class TestAtariIRL:
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 training_kwargs['batch_size'] = 50
                 print("Training arguments: ", training_kwargs)
@@ -178,11 +198,16 @@ class TestAtariIRL:
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 training_kwargs['batch_size'] = 50
                 print("Training arguments: ", training_kwargs)
