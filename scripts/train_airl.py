@@ -36,7 +36,8 @@ def train_airl(args):
         },
         reward_model_cfg={
             'expert_trajs': pickle.load(open(args.trajectories_file, 'rb')),
-            'state_only': args.state_only
+            'state_only': args.state_only,
+            'drop_framestack': args.drop_discriminator_framestack
         },
         ablation=args.ablation
     )

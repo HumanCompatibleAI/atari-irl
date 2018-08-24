@@ -93,7 +93,10 @@ class VecIRLRewardEnv(VecEnvWrapper):
                 self.reward_network.obs_t: self.prev_obs
             })[:, 0]
 
-        self.prev_obs = obs
+        if self.reward_network.drop_framestack:
+            self.prev_obs = obs[:, :, :, -1:]
+        else:
+            self.prev_obs = obs
 
         assert len(rewards) == len(obs)
         return obs, rewards, done, info

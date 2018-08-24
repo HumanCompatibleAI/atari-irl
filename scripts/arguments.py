@@ -90,6 +90,7 @@ def add_irl_args(parser):
         type=str, default='none'
     )
     add_bool_feature(parser, 'state_only', default=False)
+    add_bool_feature(parser, 'drop_discriminator_framestack', default=False)
 
 
 def env_context_for_args(args):
