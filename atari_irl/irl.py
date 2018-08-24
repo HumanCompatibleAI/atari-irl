@@ -301,7 +301,9 @@ class AtariAIRL(AIRL):
                  state_only=False,
                  max_itrs=100,
                  fusion=False,
-                 name='airl'):
+                 name='airl',
+                 drop_framestack=False
+                 ):
         super(AIRL, self).__init__()
 
         # Write down everything that we're going to need in order to restore
@@ -327,6 +329,9 @@ class AtariAIRL(AIRL):
             self.fusion = None
         self.dO = env_spec.observation_space.flat_dim
         self.dOshape = env_spec.observation_space.shape
+        if drop_framestack:
+            assert len(self.dOshape) == 3
+            self.dOshape = (*self.dOshape[:-1], 1)
         self.dU = env_spec.action_space.flat_dim
         assert isinstance(env_spec.action_space, Box)
         self.score_discrim = score_discrim
@@ -335,7 +340,7 @@ class AtariAIRL(AIRL):
         self.set_demos(expert_trajs)
         self.state_only=state_only
         self.max_itrs=max_itrs
-
+        self.drop_framestack=drop_framestack
         # build energy model
         with tf.variable_scope(name) as _vs:
             # Should be batch_size x T x dO/dU
@@ -433,6 +438,10 @@ class AtariAIRL(AIRL):
             act_batch = np.concatenate([act_batch, expert_act_batch], axis=0)
             nact_batch = np.concatenate([nact_batch, nexpert_act_batch], axis=0)
             lprobs_batch = np.expand_dims(np.concatenate([lprobs_batch, expert_lprobs_batch], axis=0), axis=1).astype(np.float32)
+
+            if self.drop_framestack:
+                obs_batch = obs_batch[:, :, :, -1:]
+                nobs_batch = nobs_batch[:, :, :, -1:]
             feed_dict = {
                 self.act_t: act_batch,
                 self.obs_t: obs_batch,
@@ -441,7 +450,7 @@ class AtariAIRL(AIRL):
                 self.labels: labels,
                 self.lprobs: lprobs_batch,
                 self.lr: lr
-                }
+            }
 
             loss, _ = tf.get_default_session().run([self.loss, self.step], feed_dict=feed_dict)
             it.record('loss', loss)
@@ -454,6 +463,33 @@ class AtariAIRL(AIRL):
             logger.record_tabular('GCLDiscrimLoss', mean_loss)
 
         return mean_loss
+
+    @overrides
+    def eval(self, paths, **kwargs):
+        """
+        Return bonus
+        """
+        if self.score_discrim:
+            self._compute_path_probs(paths, insert=True)
+            obs, obs_next, acts, path_probs = self.extract_paths(paths, keys=('observations', 'observations_next', 'actions', 'a_logprobs'))
+            path_probs = np.expand_dims(path_probs, axis=1)
+            if self.drop_framestack:
+                obs = obs[:, :, :, -1:]
+                obs_next = obs_next[:, :, :, -1:]
+            scores = tf.get_default_session().run(self.discrim_output,
+                                              feed_dict={self.act_t: acts, self.obs_t: obs,
+                                                         self.nobs_t: obs_next,
+                                                         self.lprobs: path_probs})
+            score = np.log(scores) - np.log(1-scores)
+            score = score[:,0]
+        else:
+            obs, acts = self.extract_paths(paths)
+            if self.drop_framestack:
+                obs = obs[:, :, :, -1:]
+            reward = tf.get_default_session().run(self.reward,
+                                              feed_dict={self.act_t: acts, self.obs_t: obs})
+            score = reward[:,0]
+        return self.unpack(score, paths)
 
 
 def policy_config(
@@ -481,7 +517,8 @@ def reward_model_config(
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
         score_discrim=False,
-        max_itrs=100
+        max_itrs=100,
+        drop_framestack=False
 ):
     return dict(
         model=model,
@@ -491,7 +528,8 @@ def reward_model_config(
         env_spec=env_spec,
         expert_trajs=expert_trajs,
         score_discrim=score_discrim,
-        max_itrs=max_itrs
+        max_itrs=max_itrs,
+        drop_framestack=drop_framestack
     )
 
 
@@ -664,6 +702,10 @@ class IRLRunner(IRLTRPO):
         self.ablation = ablation
         self.skip_policy_update = skip_policy_update
         self.skip_discriminator = skip_discriminator
+
+    @overrides
+    def init_opt(self):
+        pass
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):
