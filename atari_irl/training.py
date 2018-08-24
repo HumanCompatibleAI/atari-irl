@@ -7,6 +7,7 @@ from baselines.ppo2 import ppo2
 
 from . import policies, utils
 from .sampling import PPOSample
+from .optimizers import PPOOptimizer, make_batching_config
 
 from collections import deque, namedtuple
 import time
@@ -19,47 +20,6 @@ PPOBatch = namedtuple('PPOBatch', [
 PPOBatch.train_args = lambda self: (
     self.obs, self.returns, self.masks, self.actions, self.values, self.neglogpacs
 )
-BatchingConfig = namedtuple('BatchingInfo', [
-    'nbatch', 'nbatch_train', 'noptepochs', 'nenvs', 'nsteps', 'nminibatches'
-])
-
-def train_steps(
-        *, model, run_info, batching_config, lrnow, cliprangenow, nbatch_train
-):
-    states = run_info.states
-    nbatch, noptepochs = batching_config.nbatch, batching_config.noptepochs
-    nenvs, nminibatches = batching_config.nenvs, batching_config.nminibatches
-    nsteps = batching_config.nsteps
-
-    mblossvals = []
-    if states is None:  # nonrecurrent version
-        inds = np.arange(nbatch)
-        for _ in range(noptepochs):
-            np.random.shuffle(inds)
-            for start in range(0, nbatch, nbatch_train):
-                end = start + nbatch_train
-                mbinds = inds[start:end]
-                slices = (arr[mbinds] for arr in run_info.train_args())
-                mblossvals.append(model.train(lrnow, cliprangenow, *slices))
-
-    else:  # recurrent version
-        assert nenvs % nminibatches == 0
-        envsperbatch = nenvs // nminibatches
-        envinds = np.arange(nenvs)
-        flatinds = np.arange(nenvs * nsteps).reshape(nenvs, nsteps)
-        envsperbatch = nbatch_train // nsteps
-        for _ in range(noptepochs):
-            np.random.shuffle(envinds)
-            for start in range(0, nenvs, envsperbatch):
-                end = start + envsperbatch
-                mbenvinds = envinds[start:end]
-                mbflatinds = flatinds[mbenvinds].ravel()
-                slices = (arr[mbflatinds] for arr in run_info.train_args())
-                mbstates = states[mbenvinds]
-                mblossvals.append(model.train(lrnow, cliprangenow, *slices, mbstates))
-
-    return mblossvals
-
 
 def print_log(
         *, model, run_info, batching_config,
@@ -98,14 +58,6 @@ def setup_policy(*, model_args, nenvs, ob_space, ac_space, env, save_env, checkp
     return policy
 
 
-def make_batching_config(*,env, nsteps, noptepochs, nminibatches):
-    nenvs = env.num_envs
-    nbatch = nenvs * nsteps
-    nbatch_train = nbatch // nminibatches
-    return BatchingConfig(
-        nbatch=nbatch, nbatch_train=nbatch_train, noptepochs=noptepochs,
-        nenvs=nenvs, nsteps=nsteps, nminibatches=nminibatches
-    )
 
 
 def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
@@ -184,7 +136,7 @@ class Runner(ppo2.AbstractEnvRunner):
 
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
 
-            self.env.render()
+            #self.env.render()
 
             if should_show:
                 rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
@@ -271,24 +223,16 @@ class Learner:
 
         print(locals())
 
-        # Deal with constant arguments
-        if isinstance(lr, float): lr = constfn(lr)
-        else: assert callable(lr)
-        if isinstance(cliprange, float): cliprange = constfn(cliprange)
-        else: assert callable(cliprange)
-
-        self.lr = lr
-        self.cliprange = cliprange
-
         total_timesteps = int(total_timesteps)
+        batching_config = make_batching_config(
+            nenvs=env.num_envs,
+            nsteps=nsteps,
+            noptepochs=noptepochs,
+            nminibatches=nminibatches
+        )
 
         ob_space = env.observation_space
         ac_space = env.action_space
-
-        batching_config = make_batching_config(
-            env=env, nsteps=nsteps, noptepochs=noptepochs,
-            nminibatches=nminibatches
-        )
 
         model_args = dict(
             policy=policy_class, ob_space=ob_space, ac_space=ac_space,
@@ -305,17 +249,16 @@ class Learner:
 
         model = policy.model
         runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
+        optimizer = PPOOptimizer(policy=policy, batching_config=batching_config)
 
         # Set our major learner objects
-        self.batching_config = batching_config
         self.policy = policy
         self.model  = model
         self.runner = runner
+        self.optimizer = optimizer
 
         # Set our last few run configurations
         self.callbacks = []
-        self.nbatch = batching_config.nbatch
-        self.nupdates = total_timesteps // batching_config.nbatch
 
         # Initialize the objects that will change as we learn
         self._update = 1
@@ -347,40 +290,22 @@ class Learner:
 
     def optimize_policy(self, itr):
         assert self._itr == itr
-
-        # initialize our start time if we haven't already
         if not self._tfirststart:
            self._tfirststart = time.time()
-
-        # compute our learning rate and clip ranges
-        assert self.nbatch % self.batching_config.nminibatches == 0
-        nbatch_train = self.nbatch // self.batching_config.nminibatches
         tstart = time.time()
-        frac = 1.0 - (self._update - 1.0) / self.nupdates
-        assert frac > 0.0
-        lrnow = self.lr(frac)
-        cliprangenow = self.cliprange(frac)
 
-        # Run the training steps for PPO
-        mblossvals = train_steps(
-            model=self.policy.model,
-            run_info=self._run_info,
-            batching_config=self.batching_config,
-            lrnow=lrnow,
-            cliprangenow=cliprangenow,
-            nbatch_train=nbatch_train
-        )
+        # Actually do the optimization
+        self._lossvals = self.optimizer.optimize_policy(itr, self._run_info)
 
-        self._lossvals = np.mean(mblossvals, axis=0)
         self._tnow = time.time()
-        self._fps = int(self.nbatch / (self._tnow - tstart))
+        self._fps = int(self.optimizer.nbatch / (self._tnow - tstart))
 
         for check, fn in self.callbacks:
             if check(self.update):
                 fn(**locals())
 
         self._update += 1
-        if self._update > self.nupdates:
+        if self._update > self.optimizer.nupdates:
             logger.log("Warning, exceeded planned number of updates")
 
     def step(self):
@@ -397,7 +322,7 @@ class Learner:
     @staticmethod
     def print_log(self, **kwargs):
         print_log(
-            model=self.model, batching_config=self.batching_config,
+            model=self.model, batching_config=self.optimizer.batching_config,
             update=self.update, epinfobuf=self._epinfobuf,
             tfirststart=self._tfirststart, run_info=self._run_info,
             lossvals=self._lossvals, fps=self._fps, tnow=self._tnow
@@ -411,7 +336,7 @@ class Learner:
             )
         should_yield = self.check_update_interval(yield_freq)
 
-        while self.update < self.nupdates:
+        while self.update < self.optimizer.nupdates:
             self.step()
             if should_yield(self.update):
                 yield yield_fn(self)
