@@ -137,7 +137,10 @@ class Learner:
 
         model = policy.model
         sampler = PPOBatchSampler(env=env, model=model, nsteps=nsteps)
-        optimizer = PPOOptimizer(policy=policy, batching_config=batching_config)
+        optimizer = PPOOptimizer(
+            policy=policy, batching_config=batching_config,
+            lr=lr, cliprange=cliprange, total_timesteps=total_timesteps
+        )
 
         self.gamma = gamma
         self.lam = lam
