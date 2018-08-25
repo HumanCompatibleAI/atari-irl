@@ -361,9 +361,7 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
 
     def obtain_samples(self, itr):
         self.cur_sample = self._sample()
-        samples = self.cur_sample.to_trajectories()
-        self.algo.irl_model._insert_next_state(samples)
-        return samples
+        return self.cur_sample
 
     def process_samples(self, itr, paths):
         ppo_batch = self.cur_sample.to_ppo_batch()

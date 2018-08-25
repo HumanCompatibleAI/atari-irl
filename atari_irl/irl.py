@@ -748,22 +748,20 @@ class IRLRunner(IRLTRPO):
         self.irl_model.restore_from_snapshot(data['reward_params'])
         self.policy.restore_from_snapshot(data['policy_params'])
 
+    @overrides
     def obtain_samples(self, itr):
-        paths = super(IRLRunner, self).obtain_samples(itr)
-        negs = 0
-        poss = 0
-        for i in range(len(paths)):
-            negs += (paths[i]['rewards'] == -1).sum()
-            poss += (paths[i]['rewards'] == 1).sum()
-
-        logger.record_tabular("PointsGained", poss)
-        logger.record_tabular("PointsLost", negs)
-        logger.record_tabular("NumTimesteps", sum([len(p['rewards']) for p in paths]))
-        return paths
+        return super(IRLRunner, self).obtain_samples(itr)
 
     @overrides
     def optimize_policy(self, itr, samples_data):
         self.optimizer.optimize_policy(itr, samples_data)
+
+    @overrides
+    def compute_irl(self, samples, itr=0):
+        # By only turning
+        paths = samples.to_trajectories()
+        self.irl_model._insert_next_state(paths)
+        return super().compute_irl(paths, itr)
 
     def train(self):
         sess = tf.get_default_session()
@@ -775,22 +773,20 @@ class IRLRunner(IRLTRPO):
         self.start_worker()
         start_time = time.time()
 
-        returns = []
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
             with logger.prefix('itr #%d | ' % itr):
                 logger.record_tabular('Itr', itr)
 
                 logger.log("Obtaining samples...")
-                paths = self.obtain_samples(itr)
+                samples = self.obtain_samples(itr)
 
                 if not self.skip_discriminator:
                     logger.log("Optimizing discriminator...")
-                    paths = self.compute_irl(paths, itr=itr)
+                    paths = self.compute_irl(samples, itr=itr)
 
                 logger.log("Processing samples...")
-                returns.append(self.log_avg_returns(paths))
-                samples_data = self.process_samples(itr, paths)
+                samples_data = self.process_samples(itr, samples)
 
                 if not self.skip_policy_update:
                     logger.log("Optimizing policy...")
