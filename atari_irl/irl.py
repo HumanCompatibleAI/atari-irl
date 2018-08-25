@@ -664,17 +664,11 @@ def get_training_kwargs(
     baselines_venv = baselines_venv
 
     nsteps = 2048
-    total_timesteps = 10e6
-    nminibatches = 4
-    noptepochs = 4
-    lr = 3e-4
-    cliprange = 0.2
-    total_timesteps = int(total_timesteps)
     batching_config = training.make_batching_config(
         nenvs=baselines_venv.num_envs,
         nsteps=nsteps,
-        noptepochs=noptepochs,
-        nminibatches=nminibatches
+        noptepochs=4,
+        nminibatches=4
     )
     policy_cfg['batching_config'] = batching_config
 
@@ -696,9 +690,9 @@ def get_training_kwargs(
         ),
         optimizer_args=dict(
             batching_config=batching_config,
-            lr=lr,
-            cliprange=cliprange,
-            total_timesteps=total_timesteps
+            lr=3e-4,
+            cliprange=0.2,
+            total_timesteps=10e6
         )
     )
     training_kwargs.update(
