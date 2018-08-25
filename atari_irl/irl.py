@@ -90,7 +90,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         gamma = 0.99
         lam = 0.95
         nminibatches = 4
-        noptepochs = 4,
+        noptepochs = 4
         cliprange = 0.2
         checkpoint = None
         save_env = True
@@ -126,9 +126,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             )
 
             self.model = policy.model
-            self.sampler = sampling.PPOBatchSampler(
-                None, env=baselines_venv, model=self.model, nsteps=nsteps
-            )
+
             self.optimizer = optimizers.PPOOptimizer(
                 policy=policy, batching_config=batching_config,
                 lr=lr, cliprange=cliprange, total_timesteps=total_timesteps
@@ -713,6 +711,9 @@ def get_training_kwargs(
         irl_model=irl_model,
         baseline=ZeroBaseline(env_spec=envs.spec),
         ablation=ablation,
+        sampler_args={
+            'nsteps': 2048
+        }
     )
     training_kwargs.update(
         add_ablation(training_cfg, ablation_modifiers.training_modifiers)
@@ -747,7 +748,6 @@ class IRLRunner(IRLTRPO):
 
     @overrides
     def init_opt(self):
-        self.sampler = self.policy.sampler
         self.optimizer = self.policy.optimizer
 
     @overrides
@@ -808,17 +808,19 @@ class IRLRunner(IRLTRPO):
                 returns.append(self.log_avg_returns(paths))
                 samples_data = self.process_samples(itr, paths)
 
+                import pdb; pdb.set_trace()
+
                 if not self.skip_policy_update:
                     logger.log("Optimizing policy...")
                     self.optimize_policy(itr, samples_data)
 
                 logger.record_tabular(
                     "PolicyBufferOriginalTaskRewardMean",
-                    self.policy.learner.mean_reward
+                    self.sampler.mean_reward
                 )
                 logger.record_tabular(
                     "PolicyBufferEpisodeLengthMean",
-                    self.policy.learner.mean_length
+                    self.sampler.mean_length
                 )
 
                 if itr % 10 == 0:
@@ -889,7 +891,6 @@ def airl(
             ablation=ablation,
         )
         print("Training arguments: ", training_kwargs)
-        training_kwargs['sampler_args'] = {}
         algo = IRLRunner(
             **training_kwargs,
             sampler_cls=sampling.PPOBatchSampler,

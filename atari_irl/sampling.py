@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
-from . import utils, training
-from collections import namedtuple
+from . import utils
+from collections import namedtuple, deque
 
 from rllab.misc.overrides import overrides
 from rllab.sampler.base import BaseSampler
@@ -193,7 +193,9 @@ class PPOSample:
 class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
     # If you want to use the baselines PPO sampler as a sampler for the
     # airl interfaced code, use this.
-    def __init__(self, algo, *, env, model, nsteps):
+    def __init__(self, algo, *, nsteps):
+        model = algo.policy.model
+        env = algo.env._wrapped_env.venv
         # The biggest weird thing about this piece of code is that it does a
         # a bunch of work to handle the context of what happens if the model
         # that we're training is actually recurrent.
@@ -206,6 +208,8 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
         self.model = model
         self.nsteps = nsteps
         self.cur_sample = None
+
+        self._epinfobuf = deque(maxlen=100)
 
     def start_worker(self):
         pass
@@ -244,8 +248,6 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
                 print(f"Action:\t{act_summaries}")
 
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-
-            self.env.render()
 
             if should_show:
                 rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
@@ -361,9 +363,16 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
     def process_samples(self, itr, paths):
         # TODO(Aaron): Set these in self
         ppo_batch = self.cur_sample.to_ppo_batch(gamma=0.99, lam=0.95)
-        self.algo.policy.learner._run_info = ppo_batch
-        self.algo.policy.learner._epinfobuf.extend(ppo_batch.epinfos)
+        self._epinfobuf.extend(ppo_batch.epinfos)
         return ppo_batch
+
+    @property
+    def mean_reward(self):
+        return ppo2.safemean([epinfo['r'] for epinfo in self._epinfobuf])
+
+    @property
+    def mean_length(self):
+        return ppo2.safemean([epinfo['l'] for epinfo in self._epinfobuf])
 
 
 class FullTrajectorySampler(VectorizedSampler):

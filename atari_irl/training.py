@@ -2,10 +2,10 @@ import numpy as np
 
 from baselines import logger
 from baselines.common import explained_variance
-from baselines.ppo2.ppo2 import constfn, safemean
+from baselines.ppo2.ppo2 import safemean
 from baselines.ppo2 import ppo2
 
-from . import policies, utils
+from . import policies
 from .sampling import PPOBatchSampler
 from .optimizers import PPOOptimizer, make_batching_config
 
@@ -167,14 +167,6 @@ class Learner:
     @property
     def update(self):
         return self._update
-
-    @property
-    def mean_reward(self):
-        return safemean([epinfo['r'] for epinfo in self._epinfobuf])
-
-    @property
-    def mean_length(self):
-        return safemean([epinfo['l'] for epinfo in self._epinfobuf])
 
     def obtain_samples(self, itr):
         # Run the model on the environments
