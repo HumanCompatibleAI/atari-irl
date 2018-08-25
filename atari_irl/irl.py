@@ -783,6 +783,12 @@ class IRLRunner(IRLTRPO):
 
                 if not self.skip_discriminator:
                     logger.log("Optimizing discriminator...")
+                    # The fact that we're not using the reward labels from here
+                    # means that the policy optimization is effectively getting
+                    # an off-by-one issue. I'm not sure that this would fix the
+                    # issues that we're seeing, but it's definitely different
+                    # from the original algorithm and so we should try fixing
+                    # it anyway.
                     paths = self.compute_irl(samples, itr=itr)
 
                 logger.log("Processing samples...")
