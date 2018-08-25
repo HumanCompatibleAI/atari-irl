@@ -61,10 +61,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             init_location=init_location
         )
 
-        ##### THIS IS LEARNER #####
-        gamma = 0.99
-        lam = 0.95
-
         ent_coef = 0.0
         vf_coef = 0.5
         max_grad_norm = 0.5
@@ -81,10 +77,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         )
 
         self.num_envs=num_envs
-
-        self.gamma = gamma
-        self.lam = lam
-        ##### END OF GIANT GOB OF LEARNER #####
 
         with tf.variable_scope(name) as scope:
             policy = policies.Policy(model_args)
