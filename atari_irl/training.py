@@ -6,7 +6,7 @@ from baselines.ppo2.ppo2 import constfn, safemean
 from baselines.ppo2 import ppo2
 
 from . import policies, utils
-from .sampling import PPOSample
+from .sampling import PPOBatchSampler
 from .optimizers import PPOOptimizer, make_batching_config
 
 from collections import deque, namedtuple
@@ -113,105 +113,13 @@ class Runner(ppo2.AbstractEnvRunner):
         super().__init__(env=env, model=model, nsteps=nsteps)
         self.lam = lam
         self.gamma = gamma
+        self.sampler = PPOBatchSampler(env=env, model=model, nsteps=nsteps)
 
     def sample(self):
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
-        mb_states = self.states
-        epinfos = []
-        for _ in range(self.nsteps):
-            actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
-            mb_obs.append(self.obs.copy())
-            mb_actions.append(actions)
-            mb_values.append(values)
-            mb_neglogpacs.append(neglogpacs)
-            mb_dones.append(self.dones)
+        return self.sampler.run()
 
-            should_show = False # np.random.random() > .95
-            if should_show:
-                print()
-                obs_summaries = '\t'.join([f"{o[0,0,0]}{o[0,-1,0]}" for o in self.obs])
-                act_summaries = '\t'.join([str(a) for a in actions])
-                print(f"State:\t{obs_summaries}")
-                print(f"Action:\t{act_summaries}")
-
-            self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-
-            #self.env.render()
-
-            if should_show:
-                rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
-                print(f"Reward:\t{rew}")
-                print()
-
-            for info in infos:
-                maybeepinfo = info.get('episode')
-                if maybeepinfo:
-                    epinfos.append(maybeepinfo)
-            mb_rewards.append(rewards)
-
-        return PPOSample(
-            mb_obs, mb_rewards, mb_actions, mb_values, mb_dones,
-            mb_neglogpacs, mb_states, epinfos, self
-        )
-
-    def process_ppo_samples(
-            self, mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs,
-            mb_states, epinfos
-    ):
-        #batch of steps to batch of rollouts
-        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
-        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
-        mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-        mb_actions = np.asarray(mb_actions)
-        mb_values = np.asarray(mb_values, dtype=np.float32)
-        mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        last_values = self.model.value(self.obs, self.states, self.dones)
-        #discount/bootstrap off value fn
-        mb_returns = np.zeros_like(mb_rewards)
-        mb_advs = np.zeros_like(mb_rewards)
-        lastgaelam = 0
-        for t in reversed(range(self.nsteps)):
-            if t == self.nsteps - 1:
-                nextnonterminal = 1.0 - self.dones
-                nextvalues = last_values
-            else:
-                nextnonterminal = 1.0 - mb_dones[t+1]
-                nextvalues = mb_values[t+1]
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
-            mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
-        mb_returns = mb_advs + mb_values
-        return (*map(ppo2.sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
-            mb_states, epinfos)
-
-    def process_trajectory(self, traj):
-        def batch_reshape(single_traj_data):
-            single_traj_data = np.asarray(single_traj_data)
-            s = single_traj_data.shape
-            return single_traj_data.reshape(s[0], 1, *s[1:])
-
-        agent_info = traj['agent_infos']
-        self.state = None
-        self.obs[:] = traj['observations'][-1]
-        self.dones = np.ones(self.env.num_envs)
-        dones = np.zeros(agent_info['values'].shape)
-        dones[-1] = 1
-        # This is actually kind of weird w/r/t to the PPO code, because the
-        # batch length is so much longer. Maybe this will work? But if PPO
-        # ablations don't crash, but fail to learn this is probably why.
-        return self.process_ppo_samples(
-            # The easy stuff that we just observe
-            batch_reshape(traj['observations']),
-            np.hstack([batch_reshape(traj['rewards']) for _ in range(8)]),
-            batch_reshape(traj['actions']).argmax(axis=1),
-            # now the things from the agent info
-            agent_info['values'], dones, agent_info['neglogpacs'],
-            # and the annotations
-            None, traj['env_infos']
-        )
-
-    def run(self):
-        return self.sample().to_ppo_batch()
+    def run(self, gamma=.99, lam=.95):
+        return self.sample().to_ppo_batch(gamma=self.gamma, lam=self.lam)
 
 
 class Learner:

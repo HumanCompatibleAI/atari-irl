@@ -103,18 +103,26 @@ class TestAtariIRL:
                 # It shouldn't be super short
                 assert len(vectorized_samples[0]['actions']) > 100
 
+                sampler = sampling.PPOBatchSampler(
+                    model=algo.policy.learner.model,
+                    env=env_context.environments,
+                    nsteps=128*env_context.environments.num_envs
+                )
+
                 # These are very different because the policy is
                 # non-deterministic. This test is only checking that the
                 # shapes are right, and we need something more deterministic to
                 # determine that the return calculation is also correct
-                ppo_processed = algo.policy.learner.runner.process_trajectory(
-                    vectorized_samples[0]
-                )
-                ppo_generated = algo.policy.learner.runner.run()
+                ppo_processed = sampler.process_trajectory(
+                    vectorized_samples[0], gamma=0.99, lam=0.95
+                ).train_args()
+                ppo_generated = sampler.process_to_ppo_batch(
+                    sampler.run(), gamma=0.99, lam=0.95
+                ).train_args()
 
+                assert len(ppo_processed) == len(ppo_generated)
                 # the indices before the states and episode infos
-                for i in range(6):
-                    print(i)
+                for i in range(len(ppo_processed)):
                     assert ppo_processed[i][:128].shape == ppo_generated[i].shape
 
     def test_ppo_sampling_roundtrips(self):
@@ -151,7 +159,7 @@ class TestAtariIRL:
                 assert (ppo_sample.neglogpacs == roundtrip_sample.neglogpacs).all()
                 assert ppo_sample.states == roundtrip_sample.states
                 assert ppo_sample.epinfos == roundtrip_sample.epinfos
-                assert ppo_sample.runner == roundtrip_sample.runner
+                assert ppo_sample.sampler == roundtrip_sample.sampler
 
     def test_ppo_sampling_raveling(self):
         with utils.EnvironmentContext(
