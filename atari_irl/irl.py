@@ -22,7 +22,7 @@ from baselines.ppo2.policies import CnnPolicy, nature_cnn, fc
 
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
 from .utils import one_hot
-from . import sampling, training, utils, environments, optimizers
+from . import sampling, training, utils, environments, optimizers, policies
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -56,13 +56,16 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             *,
             name,
             policy_model,
-            envs,
-            baseline_wrappers,
+            num_envs,
+            env_spec,
+            wrapped_env_action_space,
+            action_space,
+            observation_space,
             init_location=None
     ):
         Serializable.quick_init(self, locals())
-        assert isinstance(envs.action_space, Box)
-        self._dist = Categorical(envs.action_space.shape[0])
+        assert isinstance(wrapped_env_action_space, Box)
+        self._dist = Categorical(wrapped_env_action_space.shape[0])
 
         # this is going to be serialized, so we can't add in the envs or
         # wrappers
@@ -71,14 +74,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             policy_model=policy_model,
             init_location=init_location
         )
-
-        baselines_venv = envs._wrapped_env.venv
-        for fn in baseline_wrappers + [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]:
-            print("Wrapping baseline with function")
-            baselines_venv = fn(baselines_venv)
-
-        self.baselines_venv = baselines_venv
-        print("Environment: ", self.baselines_venv)
 
         ##### THIS IS LEARNER #####
         total_timesteps=10e6
@@ -97,34 +92,30 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
 
         total_timesteps = int(total_timesteps)
         batching_config = training.make_batching_config(
-            nenvs=baselines_venv.num_envs,
+            nenvs=num_envs,
             nsteps=nsteps,
             noptepochs=noptepochs,
             nminibatches=nminibatches
         )
 
-        ob_space = baselines_venv.observation_space
-        ac_space = baselines_venv.action_space
-
         model_args = dict(
-            policy=policy_model, ob_space=ob_space, ac_space=ac_space,
+            policy=policy_model,
+            ob_space=observation_space,
+            ac_space=action_space,
             nbatch_act=batching_config.nenvs,
             nbatch_train=batching_config.nbatch_train,
             nsteps=batching_config.nsteps,
             ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm
         )
 
+        self.num_envs=num_envs
+
         self.gamma = gamma
         self.lam = lam
         ##### END OF GIANT GOB OF LEARNER #####
 
         with tf.variable_scope(name) as scope:
-
-            policy = training.setup_policy(
-                model_args=model_args, env=baselines_venv, nenvs=baselines_venv.num_envs,
-                checkpoint=checkpoint, ob_space=ob_space, ac_space=ac_space, save_env=save_env
-            )
-
+            policy = policies.Policy(model_args)
             self.model = policy.model
 
             self.optimizer = optimizers.PPOOptimizer(
@@ -135,7 +126,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             self.act_model = self.model.act_model
             self.scope = scope
 
-        StochasticPolicy.__init__(self, envs.spec)
+        StochasticPolicy.__init__(self, env_spec)
         self.name = name
 
         self.probs = tf.nn.softmax(self.act_model.pd.logits)
@@ -172,8 +163,8 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             one_hot(actions, 6),
             dict(
                 prob=self._f_dist(observations),
-                values=values.reshape(self.baselines_venv.num_envs, 1),
-                neglogpacs=neglogpacs.reshape(self.baselines_venv.num_envs, 1)
+                values=values.reshape(self.num_envs, 1),
+                neglogpacs=neglogpacs.reshape(self.num_envs, 1)
             )
         )
 
@@ -597,11 +588,14 @@ def training_config(
     )
 
 
-def make_irl_policy(policy_cfg, *, envs, baseline_wrappers=None):
+def make_irl_policy(policy_cfg, *, wrapped_venv, baselines_venv):
     policy_fn = policy_cfg.pop('policy')
     policy = policy_fn(
-        envs=envs,
-        baseline_wrappers=baseline_wrappers,
+        num_envs=baselines_venv.num_envs,
+        env_spec=wrapped_venv.spec,
+        wrapped_env_action_space=wrapped_venv.action_space,
+        action_space=baselines_venv.action_space,
+        observation_space=baselines_venv.observation_space,
         **policy_cfg
     )
 
@@ -702,16 +696,27 @@ def get_training_kwargs(
     baseline_wrappers = ablation_modifiers.policy_modifiers.pop(
         'baseline_wrappers'
     )
+
+    baselines_venv = venv
+    for fn in baseline_wrappers + [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]:
+        print("Wrapping baseline with function")
+        baselines_venv = fn(baselines_venv)
+
+    baselines_venv = baselines_venv
+
+
     training_kwargs = dict(
         env=envs,
         policy=make_irl_policy(
             add_ablation(policy_cfg, ablation_modifiers.policy_modifiers),
-            envs=envs, baseline_wrappers=baseline_wrappers
+            wrapped_venv=envs,
+            baselines_venv=baselines_venv
         ),
         irl_model=irl_model,
         baseline=ZeroBaseline(env_spec=envs.spec),
         ablation=ablation,
         sampler_args={
+            'baselines_venv': baselines_venv,
             'nsteps': 2048
         }
     )

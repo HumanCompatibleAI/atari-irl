@@ -193,9 +193,9 @@ class PPOSample:
 class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
     # If you want to use the baselines PPO sampler as a sampler for the
     # airl interfaced code, use this.
-    def __init__(self, algo, *, nsteps):
+    def __init__(self, algo, *, nsteps, baselines_venv):
         model = algo.policy.model
-        env = algo.policy.baselines_venv
+        env = baselines_venv
         # The biggest weird thing about this piece of code is that it does a
         # a bunch of work to handle the context of what happens if the model
         # that we're training is actually recurrent.
@@ -363,7 +363,6 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
         return samples
 
     def process_samples(self, itr, paths):
-        # TODO(Aaron): Set these in self
         ppo_batch = self.cur_sample.to_ppo_batch(gamma=0.99, lam=0.95)
         self._epinfobuf.extend(ppo_batch.epinfos)
         return ppo_batch

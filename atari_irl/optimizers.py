@@ -74,10 +74,8 @@ class PPOOptimizer:
             *,
             policy,
             batching_config: BatchingConfig,
-
             lr=3e-4,
             cliprange=0.2,
-
             total_timesteps=10e6
     ):
         # Deal with the policy
