@@ -808,8 +808,6 @@ class IRLRunner(IRLTRPO):
                 returns.append(self.log_avg_returns(paths))
                 samples_data = self.process_samples(itr, paths)
 
-                import pdb; pdb.set_trace()
-
                 if not self.skip_policy_update:
                     logger.log("Optimizing policy...")
                     self.optimize_policy(itr, samples_data)

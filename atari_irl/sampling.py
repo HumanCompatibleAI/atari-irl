@@ -195,7 +195,7 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
     # airl interfaced code, use this.
     def __init__(self, algo, *, nsteps):
         model = algo.policy.model
-        env = algo.env._wrapped_env.venv
+        env = algo.policy.baselines_venv
         # The biggest weird thing about this piece of code is that it does a
         # a bunch of work to handle the context of what happens if the model
         # that we're training is actually recurrent.
@@ -239,7 +239,8 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
             mb_neglogpacs.append(neglogpacs)
             mb_dones.append(self.dones)
 
-            should_show = False # np.random.random() > .95
+            should_show = False and np.random.random() > .95
+
             if should_show:
                 print()
                 obs_summaries = '\t'.join([f"{o[0,0,0]}{o[0,-1,0]}" for o in self.obs])
@@ -253,6 +254,7 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
                 rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
                 print(f"Reward:\t{rew}")
                 print()
+
 
             for info in infos:
                 maybeepinfo = info.get('episode')
