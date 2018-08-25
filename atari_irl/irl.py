@@ -22,7 +22,7 @@ from baselines.ppo2.policies import CnnPolicy, nature_cnn, fc
 
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
 from .utils import one_hot
-from . import sampling, training, utils, environments
+from . import sampling, training, utils, environments, optimizers
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -80,20 +80,61 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         self.baselines_venv = baselines_venv
         print("Environment: ", self.baselines_venv)
 
+        ##### THIS IS LEARNER #####
+        total_timesteps=10e6
+        nsteps = 2048
+        ent_coef = 0.0
+        lr = 3e-4
+        vf_coef = 0.5
+        max_grad_norm = 0.5
+        gamma = 0.99
+        lam = 0.95
+        nminibatches = 4
+        noptepochs = 4,
+        cliprange = 0.2
+        checkpoint = None
+        save_env = True
 
+        total_timesteps = int(total_timesteps)
+        batching_config = training.make_batching_config(
+            nenvs=baselines_venv.num_envs,
+            nsteps=nsteps,
+            noptepochs=noptepochs,
+            nminibatches=nminibatches
+        )
+
+        ob_space = baselines_venv.observation_space
+        ac_space = baselines_venv.action_space
+
+        model_args = dict(
+            policy=policy_model, ob_space=ob_space, ac_space=ac_space,
+            nbatch_act=batching_config.nenvs,
+            nbatch_train=batching_config.nbatch_train,
+            nsteps=batching_config.nsteps,
+            ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm
+        )
+
+        self.gamma = gamma
+        self.lam = lam
+        ##### END OF GIANT GOB OF LEARNER #####
 
         with tf.variable_scope(name) as scope:
-            self.learner = training.Learner(
-                policy_class=policy_model,
-                env=baselines_venv,
-                total_timesteps=10e6,
-                vf_coef=0.5, ent_coef=0.01,
-                nsteps=128, noptepochs=4, nminibatches=4,
-                gamma=0.99, lam=0.95,
-                lr=lambda alpha: alpha * 2.5e-4,
-                cliprange=lambda alpha: alpha * 0.1
+
+            policy = training.setup_policy(
+                model_args=model_args, env=baselines_venv, nenvs=baselines_venv.num_envs,
+                checkpoint=checkpoint, ob_space=ob_space, ac_space=ac_space, save_env=save_env
             )
-            self.act_model = self.learner.model.act_model
+
+            self.model = policy.model
+            self.sampler = sampling.PPOBatchSampler(
+                None, env=baselines_venv, model=self.model, nsteps=nsteps
+            )
+            self.optimizer = optimizers.PPOOptimizer(
+                policy=policy, batching_config=batching_config,
+                lr=lr, cliprange=cliprange, total_timesteps=total_timesteps
+            )
+
+            self.act_model = self.model.act_model
             self.scope = scope
 
         StochasticPolicy.__init__(self, envs.spec)
@@ -706,7 +747,8 @@ class IRLRunner(IRLTRPO):
 
     @overrides
     def init_opt(self):
-        pass
+        self.sampler = self.policy.sampler
+        self.optimizer = self.policy.optimizer
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):
@@ -737,9 +779,7 @@ class IRLRunner(IRLTRPO):
 
     @overrides
     def optimize_policy(self, itr, samples_data):
-        self.policy.learner._itr = itr
-        self.policy.learner._run_info = samples_data
-        self.policy.learner.optimize_policy(itr)
+        self.optimizer.optimize_policy(itr, samples_data)
 
     def train(self):
         sess = tf.get_default_session()
