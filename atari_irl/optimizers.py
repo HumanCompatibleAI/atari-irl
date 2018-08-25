@@ -5,6 +5,12 @@ import numpy as np
 
 from collections import namedtuple
 
+
+"""
+Heavily based on the ppo2 implementation found in the OpenAI baselines library,
+particularly the ppo_trainsteps function.
+"""
+
 BatchingConfig = namedtuple('BatchingInfo', [
     'nbatch', 'nbatch_train', 'noptepochs', 'nenvs', 'nsteps', 'nminibatches'
 ])

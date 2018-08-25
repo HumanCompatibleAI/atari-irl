@@ -9,6 +9,11 @@ from sandbox.rocky.tf.samplers.vectorized_sampler import VectorizedSampler
 
 from baselines.ppo2 import ppo2
 
+"""
+Heavily based on the ppo2 implementation found in the OpenAI baselines library,
+particularly in the PPOSampler class.
+"""
+
 # This is a PPO Batch that the OpenAI Baselines PPO code uses as its underlying
 # representation
 PPOBatch = namedtuple('PPOBatch', [
