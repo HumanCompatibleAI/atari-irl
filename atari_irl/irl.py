@@ -796,6 +796,11 @@ class IRLRunner(IRLTRPO):
 
                 if not self.skip_policy_update:
                     logger.log("Optimizing policy...")
+                    # Another issue is that the expert trajectories start from
+                    # a particular set of random seeds, and that controls how
+                    # the resets happen. This means that the difference between
+                    # environment seeds might be enough to make the
+                    # discriminator's job easy.
                     self.optimize_policy(itr, samples_data)
 
                 logger.record_tabular(
