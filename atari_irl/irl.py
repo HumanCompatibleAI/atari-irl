@@ -432,6 +432,7 @@ class AtariAIRL(AIRL):
             if self.drop_framestack:
                 obs_batch = obs_batch[:, :, :, -1:]
                 nobs_batch = nobs_batch[:, :, :, -1:]
+
             feed_dict = {
                 self.act_t: act_batch,
                 self.obs_t: obs_batch,
@@ -689,7 +690,9 @@ def get_training_kwargs(
         ablation=ablation,
         sampler_args=dict(
             baselines_venv=baselines_venv,
-            nsteps=nsteps
+            nsteps=nsteps,
+            gamma=0.99,
+            lam=0.95
         ),
         optimizer_args=dict(
             batching_config=batching_config,

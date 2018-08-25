@@ -128,8 +128,10 @@ class PPOSample:
 
         self.probabilities = self._get_sample_probabilities()
 
-    def to_ppo_batch(self, *, gamma, lam) -> PPOBatch:
-        return self.sampler.process_to_ppo_batch(self, gamma=gamma, lam=lam)
+    def to_ppo_batch(self) -> PPOBatch:
+        return self.sampler.process_to_ppo_batch(
+            self, gamma=self.sampler.gamma, lam=self.sampler.lam
+        )
 
     def _ravel_time_env_batch_to_train_batch(self, inpt):
         assert inpt.shape[0] == self.sample_batch_timesteps
@@ -193,7 +195,7 @@ class PPOSample:
 class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
     # If you want to use the baselines PPO sampler as a sampler for the
     # airl interfaced code, use this.
-    def __init__(self, algo, *, nsteps, baselines_venv):
+    def __init__(self, algo, *, nsteps, baselines_venv, gamma, lam):
         model = algo.policy.model
         env = baselines_venv
         # The biggest weird thing about this piece of code is that it does a
@@ -207,8 +209,9 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
         self.env = env
         self.model = model
         self.nsteps = nsteps
+        self.gamma = gamma
+        self.lam = lam
         self.cur_sample = None
-
         self._epinfobuf = deque(maxlen=100)
 
     def start_worker(self):
@@ -363,7 +366,7 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
         return samples
 
     def process_samples(self, itr, paths):
-        ppo_batch = self.cur_sample.to_ppo_batch(gamma=0.99, lam=0.95)
+        ppo_batch = self.cur_sample.to_ppo_batch()
         self._epinfobuf.extend(ppo_batch.epinfos)
         return ppo_batch
 
