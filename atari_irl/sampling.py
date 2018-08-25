@@ -244,6 +244,11 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
 
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
 
+            if np.random.random() < .001:
+                import pdb; pdb.set_trace()
+
+            self.env.render()
+
             if should_show:
                 rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
                 print(f"Reward:\t{rew}")

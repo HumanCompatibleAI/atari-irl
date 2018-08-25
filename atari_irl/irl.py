@@ -80,6 +80,8 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         self.baselines_venv = baselines_venv
         print("Environment: ", self.baselines_venv)
 
+
+
         with tf.variable_scope(name) as scope:
             self.learner = training.Learner(
                 policy_class=policy_model,
@@ -668,7 +670,6 @@ def get_training_kwargs(
             envs=envs, baseline_wrappers=baseline_wrappers
         ),
         irl_model=irl_model,
-        sampler_args={},
         baseline=ZeroBaseline(env_spec=envs.spec),
         ablation=ablation,
     )

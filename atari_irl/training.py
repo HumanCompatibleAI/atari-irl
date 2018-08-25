@@ -58,8 +58,6 @@ def setup_policy(*, model_args, nenvs, ob_space, ac_space, env, save_env, checkp
     return policy
 
 
-
-
 def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
     unravel_index = lambda *args: None
     # This is what IRLTRPO/IRLNPO actually uses
@@ -104,24 +102,6 @@ def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
                 trajectories[i]
 
 
-class Runner(ppo2.AbstractEnvRunner):
-    """
-    This is the PPO2 runner, but splitting the sampling and processing stage up
-    more explicitly
-    """
-    def __init__(self, *, env, model, nsteps, gamma, lam):
-        super().__init__(env=env, model=model, nsteps=nsteps)
-        self.lam = lam
-        self.gamma = gamma
-        self.sampler = PPOBatchSampler(env=env, model=model, nsteps=nsteps)
-
-    def sample(self):
-        return self.sampler.run()
-
-    def run(self, gamma=.99, lam=.95):
-        return self.sample().to_ppo_batch(gamma=self.gamma, lam=self.lam)
-
-
 class Learner:
     def __init__(self, policy_class, env, *, total_timesteps, nsteps=2048,
                  ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
@@ -156,13 +136,16 @@ class Learner:
         )
 
         model = policy.model
-        runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
+        sampler = PPOBatchSampler(env=env, model=model, nsteps=nsteps)
         optimizer = PPOOptimizer(policy=policy, batching_config=batching_config)
+
+        self.gamma = gamma
+        self.lam = lam
 
         # Set our major learner objects
         self.policy = policy
         self.model  = model
-        self.runner = runner
+        self.sampler = sampler
         self.optimizer = optimizer
 
         # Set our last few run configurations
@@ -192,7 +175,7 @@ class Learner:
 
     def obtain_samples(self, itr):
         # Run the model on the environments
-        self._run_info = self.runner.run()
+        self._run_info = self.sampler.run().to_ppo_batch(gamma=self.gamma, lam=self.lam)
         self._epinfobuf.extend(self._run_info.epinfos)
         self._itr = itr
 
