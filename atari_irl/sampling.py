@@ -244,9 +244,6 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
 
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
 
-            if np.random.random() < .001:
-                import pdb; pdb.set_trace()
-
             self.env.render()
 
             if should_show:
@@ -258,6 +255,7 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
                 maybeepinfo = info.get('episode')
                 if maybeepinfo:
                     epinfos.append(maybeepinfo)
+
             mb_rewards.append(rewards)
 
         return PPOSample(
@@ -308,7 +306,7 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
             obs=ppo_sample.obs,
             rewards=ppo_sample.rewards,
             actions=ppo_sample.actions,
-            values=ppo_sample.actions,
+            values=ppo_sample.values,
             dones=ppo_sample.dones,
             neglogpacs=ppo_sample.neglogpacs,
             states=ppo_sample.states,
