@@ -72,16 +72,13 @@ class PPOOptimizer:
     def __init__(
             self,
             *,
-            policy,
             batching_config: BatchingConfig,
             lr=3e-4,
             cliprange=0.2,
             total_timesteps=10e6
     ):
         # Deal with the policy
-        self.policy = policy
-        assert hasattr(policy, 'model')
-        assert isinstance(policy.model, Model)
+        self.policy = None
 
         # Set things based on the batching config
         self.batching_config = batching_config
@@ -100,6 +97,11 @@ class PPOOptimizer:
 
         self.lr = lr
         self.cliprange = cliprange
+
+    def update_opt(self, policy):
+        self.policy = policy
+        assert hasattr(policy, 'model')
+        assert isinstance(policy.model, Model)
 
     def optimize_policy(self, itr: int, ppo_batch: PPOBatch):
         # compute our learning rate and clip ranges

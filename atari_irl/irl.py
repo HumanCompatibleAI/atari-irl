@@ -34,22 +34,7 @@ from collections import defaultdict, namedtuple
 
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     """
-    This lets us wrap our PPO + old training code to almost fit into the
-    the IRLBatchPolOpt framework. Unfortunately, it currently conflates a few
-    things because of a bunch of shape issues between MuJoCo environments and
-    Atari environments.
-    - It has some of the responsibilities of the Policy
-        that is correct and should stay
-    - It has some of the responsibilities of the RLAlgorithm (TRPO for instance)
-        we should figure out how to split that out of here
-        in particular, training.Learner already implements optimize_policy
-        which depends on a private _run_info buffer, that seems like we just
-        need to reshape and it should be good
-        -> this means that we implement PPOOptimizer
-
-    The good news is that the IRL code doesn't actually look at any of the
-    shapes, so we should be able to move back to the actual IRLBatchPolOpt
-    interface by breaking some things out.
+    Wraps our ppo2-based Policy to fit the interface that AIRL uses.
     """
     def __init__(
             self,
@@ -61,6 +46,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             wrapped_env_action_space,
             action_space,
             observation_space,
+            batching_config,
             init_location=None
     ):
         Serializable.quick_init(self, locals())
@@ -76,28 +62,12 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         )
 
         ##### THIS IS LEARNER #####
-        total_timesteps=10e6
-        nsteps = 2048
-        ent_coef = 0.0
-        lr = 3e-4
-        vf_coef = 0.5
-        max_grad_norm = 0.5
         gamma = 0.99
         lam = 0.95
-        nminibatches = 4
-        noptepochs = 4
-        cliprange = 0.2
-        checkpoint = None
-        save_env = True
 
-        total_timesteps = int(total_timesteps)
-        batching_config = training.make_batching_config(
-            nenvs=num_envs,
-            nsteps=nsteps,
-            noptepochs=noptepochs,
-            nminibatches=nminibatches
-        )
-
+        ent_coef = 0.0
+        vf_coef = 0.5
+        max_grad_norm = 0.5
         model_args = dict(
             policy=policy_model,
             ob_space=observation_space,
@@ -105,7 +75,9 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             nbatch_act=batching_config.nenvs,
             nbatch_train=batching_config.nbatch_train,
             nsteps=batching_config.nsteps,
-            ent_coef=ent_coef, vf_coef=vf_coef, max_grad_norm=max_grad_norm
+            ent_coef=ent_coef,
+            vf_coef=vf_coef,
+            max_grad_norm=max_grad_norm
         )
 
         self.num_envs=num_envs
@@ -117,12 +89,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         with tf.variable_scope(name) as scope:
             policy = policies.Policy(model_args)
             self.model = policy.model
-
-            self.optimizer = optimizers.PPOOptimizer(
-                policy=policy, batching_config=batching_config,
-                lr=lr, cliprange=cliprange, total_timesteps=total_timesteps
-            )
-
             self.act_model = self.model.act_model
             self.scope = scope
 
@@ -704,6 +670,20 @@ def get_training_kwargs(
 
     baselines_venv = baselines_venv
 
+    nsteps = 2048
+    total_timesteps = 10e6
+    nminibatches = 4
+    noptepochs = 4
+    lr = 3e-4
+    cliprange = 0.2
+    total_timesteps = int(total_timesteps)
+    batching_config = training.make_batching_config(
+        nenvs=baselines_venv.num_envs,
+        nsteps=nsteps,
+        noptepochs=noptepochs,
+        nminibatches=nminibatches
+    )
+    policy_cfg['batching_config'] = batching_config
 
     training_kwargs = dict(
         env=envs,
@@ -715,10 +695,16 @@ def get_training_kwargs(
         irl_model=irl_model,
         baseline=ZeroBaseline(env_spec=envs.spec),
         ablation=ablation,
-        sampler_args={
-            'baselines_venv': baselines_venv,
-            'nsteps': 2048
-        }
+        sampler_args=dict(
+            baselines_venv=baselines_venv,
+            nsteps=nsteps
+        ),
+        optimizer_args=dict(
+            batching_config=batching_config,
+            lr=lr,
+            cliprange=cliprange,
+            total_timesteps=total_timesteps
+        )
     )
     training_kwargs.update(
         add_ablation(training_cfg, ablation_modifiers.training_modifiers)
@@ -744,16 +730,20 @@ class IRLRunner(IRLTRPO):
             ablation='none',
             skip_policy_update=False,
             skip_discriminator=False,
+            optimizer=None,
+            optimizer_args={},
             **kwargs
     ):
-        IRLTRPO.__init__(self, *args, **kwargs)
+        if optimizer is None:
+            optimizer = optimizers.PPOOptimizer(**optimizer_args)
+        IRLTRPO.__init__(self, *args, optimizer=optimizer, **kwargs)
         self.ablation = ablation
         self.skip_policy_update = skip_policy_update
         self.skip_discriminator = skip_discriminator
 
     @overrides
     def init_opt(self):
-        self.optimizer = self.policy.optimizer
+        self.optimizer.update_opt(self.policy)
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):
