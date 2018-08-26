@@ -56,11 +56,16 @@ class TestAtariIRL:
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 print("Training arguments: ", training_kwargs)
                 algo = irl.IRLRunner(**training_kwargs)
@@ -71,11 +76,16 @@ class TestAtariIRL:
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=1, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 training_kwargs['batch_size'] = 50
                 print("Training arguments: ", training_kwargs)
@@ -93,29 +103,42 @@ class TestAtariIRL:
                 # It shouldn't be super short
                 assert len(vectorized_samples[0]['actions']) > 100
 
+                sampler = sampling.PPOBatchSampler(
+                    model=algo.policy.learner.model,
+                    env=env_context.environments,
+                    nsteps=128*env_context.environments.num_envs
+                )
+
                 # These are very different because the policy is
                 # non-deterministic. This test is only checking that the
                 # shapes are right, and we need something more deterministic to
                 # determine that the return calculation is also correct
-                ppo_processed = algo.policy.learner.runner.process_trajectory(
-                    vectorized_samples[0]
-                )
-                ppo_generated = algo.policy.learner.runner.run()
+                ppo_processed = sampler.process_trajectory(
+                    vectorized_samples[0], gamma=0.99, lam=0.95
+                ).train_args()
+                ppo_generated = sampler.process_to_ppo_batch(
+                    sampler.run(), gamma=0.99, lam=0.95
+                ).train_args()
 
+                assert len(ppo_processed) == len(ppo_generated)
                 # the indices before the states and episode infos
-                for i in range(6):
-                    print(i)
+                for i in range(len(ppo_processed)):
                     assert ppo_processed[i][:128].shape == ppo_generated[i].shape
 
     def test_ppo_sampling_roundtrips(self):
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 training_kwargs['batch_size'] = 50
                 print("Training arguments: ", training_kwargs)
@@ -128,25 +151,30 @@ class TestAtariIRL:
                 assert_trajectory_formatted(trajectories.trajectories)
                 roundtrip_sample = trajectories.to_ppo_sample()
 
-                assert ppo_sample.obs == roundtrip_sample.obs
-                assert ppo_sample.rewards == roundtrip_sample.rewards
-                assert ppo_sample.actions == roundtrip_sample.actions
-                assert ppo_sample.values == roundtrip_sample.values
-                assert ppo_sample.dones == roundtrip_sample.dones
-                assert ppo_sample.neglogpacs == roundtrip_sample.neglogpacs
+                assert (ppo_sample.obs == roundtrip_sample.obs).all()
+                assert (ppo_sample.rewards == roundtrip_sample.rewards).all()
+                assert (ppo_sample.actions == roundtrip_sample.actions).all()
+                assert (ppo_sample.values == roundtrip_sample.values).all()
+                assert (ppo_sample.dones == roundtrip_sample.dones).all()
+                assert (ppo_sample.neglogpacs == roundtrip_sample.neglogpacs).all()
                 assert ppo_sample.states == roundtrip_sample.states
                 assert ppo_sample.epinfos == roundtrip_sample.epinfos
-                assert ppo_sample.runner == roundtrip_sample.runner
+                assert ppo_sample.sampler == roundtrip_sample.sampler
 
     def test_ppo_sampling_raveling(self):
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 training_kwargs['batch_size'] = 50
                 print("Training arguments: ", training_kwargs)
@@ -178,11 +206,16 @@ class TestAtariIRL:
         with utils.EnvironmentContext(
             env_name=self.env, n_envs=8, seed=0, **self.env_modifiers
         ) as env_context:
-            with irl.IRLContext(self.config, seed=0) as irl_context:
-                training_kwargs, _, _ = irl.get_training_kwargs(
+            with irl.IRLContext(self.config, env_config={
+                'seed': 0,
+                'env_name': 'PongNoFrameskip-v4',
+                'one_hot_code': True
+            }):
+                training_kwargs, _, _, _ = irl.get_training_kwargs(
                     venv=env_context.environments,
-                    irl_context=irl_context,
-                    expert_trajectories=pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    reward_model_cfg={
+                        'expert_trajs': pickle.load(open('scripts/short_trajectories.pkl', 'rb')),
+                    }
                 )
                 training_kwargs['batch_size'] = 50
                 print("Training arguments: ", training_kwargs)

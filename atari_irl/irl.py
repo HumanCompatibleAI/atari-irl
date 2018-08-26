@@ -22,7 +22,7 @@ from baselines.ppo2.policies import CnnPolicy, nature_cnn, fc
 
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
 from .utils import one_hot
-from . import sampling, training, utils, environments
+from . import sampling, training, utils, environments, optimizers, policies
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -34,35 +34,24 @@ from collections import defaultdict, namedtuple
 
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     """
-    This lets us wrap our PPO + old training code to almost fit into the
-    the IRLBatchPolOpt framework. Unfortunately, it currently conflates a few
-    things because of a bunch of shape issues between MuJoCo environments and
-    Atari environments.
-    - It has some of the responsibilities of the Policy
-        that is correct and should stay
-    - It has some of the responsibilities of the RLAlgorithm (TRPO for instance)
-        we should figure out how to split that out of here
-        in particular, training.Learner already implements optimize_policy
-        which depends on a private _run_info buffer, that seems like we just
-        need to reshape and it should be good
-        -> this means that we implement PPOOptimizer
-
-    The good news is that the IRL code doesn't actually look at any of the
-    shapes, so we should be able to move back to the actual IRLBatchPolOpt
-    interface by breaking some things out.
+    Wraps our ppo2-based Policy to fit the interface that AIRL uses.
     """
     def __init__(
             self,
             *,
             name,
             policy_model,
-            envs,
-            baseline_wrappers,
+            num_envs,
+            env_spec,
+            wrapped_env_action_space,
+            action_space,
+            observation_space,
+            batching_config,
             init_location=None
     ):
         Serializable.quick_init(self, locals())
-        assert isinstance(envs.action_space, Box)
-        self._dist = Categorical(envs.action_space.shape[0])
+        assert isinstance(wrapped_env_action_space, Box)
+        self._dist = Categorical(wrapped_env_action_space.shape[0])
 
         # this is going to be serialized, so we can't add in the envs or
         # wrappers
@@ -72,29 +61,30 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             init_location=init_location
         )
 
-        baselines_venv = envs._wrapped_env.venv
-        for fn in baseline_wrappers + [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]:
-            print("Wrapping baseline with function")
-            baselines_venv = fn(baselines_venv)
+        ent_coef = 0.0
+        vf_coef = 0.5
+        max_grad_norm = 0.5
+        model_args = dict(
+            policy=policy_model,
+            ob_space=observation_space,
+            ac_space=action_space,
+            nbatch_act=batching_config.nenvs,
+            nbatch_train=batching_config.nbatch_train,
+            nsteps=batching_config.nsteps,
+            ent_coef=ent_coef,
+            vf_coef=vf_coef,
+            max_grad_norm=max_grad_norm
+        )
 
-        self.baselines_venv = baselines_venv
-        print("Environment: ", self.baselines_venv)
+        self.num_envs=num_envs
 
         with tf.variable_scope(name) as scope:
-            self.learner = training.Learner(
-                policy_class=policy_model,
-                env=baselines_venv,
-                total_timesteps=10e6,
-                vf_coef=0.5, ent_coef=0.01,
-                nsteps=128, noptepochs=4, nminibatches=4,
-                gamma=0.99, lam=0.95,
-                lr=lambda alpha: alpha * 2.5e-4,
-                cliprange=lambda alpha: alpha * 0.1
-            )
-            self.act_model = self.learner.model.act_model
+            policy = policies.Policy(model_args)
+            self.model = policy.model
+            self.act_model = self.model.act_model
             self.scope = scope
 
-        StochasticPolicy.__init__(self, envs.spec)
+        StochasticPolicy.__init__(self, env_spec)
         self.name = name
 
         self.probs = tf.nn.softmax(self.act_model.pd.logits)
@@ -131,8 +121,8 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             one_hot(actions, 6),
             dict(
                 prob=self._f_dist(observations),
-                values=values.reshape(self.baselines_venv.num_envs, 1),
-                neglogpacs=neglogpacs.reshape(self.baselines_venv.num_envs, 1)
+                values=values.reshape(self.num_envs, 1),
+                neglogpacs=neglogpacs.reshape(self.num_envs, 1)
             )
         )
 
@@ -442,6 +432,7 @@ class AtariAIRL(AIRL):
             if self.drop_framestack:
                 obs_batch = obs_batch[:, :, :, -1:]
                 nobs_batch = nobs_batch[:, :, :, -1:]
+
             feed_dict = {
                 self.act_t: act_batch,
                 self.obs_t: obs_batch,
@@ -556,11 +547,14 @@ def training_config(
     )
 
 
-def make_irl_policy(policy_cfg, *, envs, baseline_wrappers=None):
+def make_irl_policy(policy_cfg, *, wrapped_venv, baselines_venv):
     policy_fn = policy_cfg.pop('policy')
     policy = policy_fn(
-        envs=envs,
-        baseline_wrappers=baseline_wrappers,
+        num_envs=baselines_venv.num_envs,
+        env_spec=wrapped_venv.spec,
+        wrapped_env_action_space=wrapped_venv.action_space,
+        action_space=baselines_venv.action_space,
+        observation_space=baselines_venv.observation_space,
         **policy_cfg
     )
 
@@ -661,16 +655,45 @@ def get_training_kwargs(
     baseline_wrappers = ablation_modifiers.policy_modifiers.pop(
         'baseline_wrappers'
     )
+
+    baselines_venv = venv
+    for fn in baseline_wrappers + [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]:
+        print("Wrapping baseline with function")
+        baselines_venv = fn(baselines_venv)
+
+    baselines_venv = baselines_venv
+
+    nsteps = 2048
+    batching_config = training.make_batching_config(
+        nenvs=baselines_venv.num_envs,
+        nsteps=nsteps,
+        noptepochs=4,
+        nminibatches=4
+    )
+    policy_cfg['batching_config'] = batching_config
+
     training_kwargs = dict(
         env=envs,
         policy=make_irl_policy(
             add_ablation(policy_cfg, ablation_modifiers.policy_modifiers),
-            envs=envs, baseline_wrappers=baseline_wrappers
+            wrapped_venv=envs,
+            baselines_venv=baselines_venv
         ),
         irl_model=irl_model,
-        sampler_args={},
         baseline=ZeroBaseline(env_spec=envs.spec),
         ablation=ablation,
+        sampler_args=dict(
+            baselines_venv=baselines_venv,
+            nsteps=nsteps,
+            gamma=0.99,
+            lam=0.95
+        ),
+        optimizer_args=dict(
+            batching_config=batching_config,
+            lr=3e-4,
+            cliprange=0.2,
+            total_timesteps=10e6
+        )
     )
     training_kwargs.update(
         add_ablation(training_cfg, ablation_modifiers.training_modifiers)
@@ -696,16 +719,20 @@ class IRLRunner(IRLTRPO):
             ablation='none',
             skip_policy_update=False,
             skip_discriminator=False,
+            optimizer=None,
+            optimizer_args={},
             **kwargs
     ):
-        IRLTRPO.__init__(self, *args, **kwargs)
+        if optimizer is None:
+            optimizer = optimizers.PPOOptimizer(**optimizer_args)
+        IRLTRPO.__init__(self, *args, optimizer=optimizer, **kwargs)
         self.ablation = ablation
         self.skip_policy_update = skip_policy_update
         self.skip_discriminator = skip_discriminator
 
     @overrides
     def init_opt(self):
-        pass
+        self.optimizer.update_opt(self.policy)
 
     @overrides
     def get_itr_snapshot(self, itr, samples_data):
@@ -721,24 +748,20 @@ class IRLRunner(IRLTRPO):
         self.irl_model.restore_from_snapshot(data['reward_params'])
         self.policy.restore_from_snapshot(data['policy_params'])
 
+    @overrides
     def obtain_samples(self, itr):
-        paths = super(IRLRunner, self).obtain_samples(itr)
-        negs = 0
-        poss = 0
-        for i in range(len(paths)):
-            negs += (paths[i]['rewards'] == -1).sum()
-            poss += (paths[i]['rewards'] == 1).sum()
-
-        logger.record_tabular("PointsGained", poss)
-        logger.record_tabular("PointsLost", negs)
-        logger.record_tabular("NumTimesteps", sum([len(p['rewards']) for p in paths]))
-        return paths
+        return super(IRLRunner, self).obtain_samples(itr)
 
     @overrides
     def optimize_policy(self, itr, samples_data):
-        self.policy.learner._itr = itr
-        self.policy.learner._run_info = samples_data
-        self.policy.learner.optimize_policy(itr)
+        self.optimizer.optimize_policy(itr, samples_data)
+
+    @overrides
+    def compute_irl(self, samples, itr=0):
+        # By only turning
+        paths = samples.to_trajectories()
+        self.irl_model._insert_next_state(paths)
+        return super().compute_irl(paths, itr)
 
     def train(self):
         sess = tf.get_default_session()
@@ -750,34 +773,43 @@ class IRLRunner(IRLTRPO):
         self.start_worker()
         start_time = time.time()
 
-        returns = []
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
             with logger.prefix('itr #%d | ' % itr):
                 logger.record_tabular('Itr', itr)
 
                 logger.log("Obtaining samples...")
-                paths = self.obtain_samples(itr)
+                samples = self.obtain_samples(itr)
 
                 if not self.skip_discriminator:
                     logger.log("Optimizing discriminator...")
-                    paths = self.compute_irl(paths, itr=itr)
+                    # The fact that we're not using the reward labels from here
+                    # means that the policy optimization is effectively getting
+                    # an off-by-one issue. I'm not sure that this would fix the
+                    # issues that we're seeing, but it's definitely different
+                    # from the original algorithm and so we should try fixing
+                    # it anyway.
+                    paths = self.compute_irl(samples, itr=itr)
 
                 logger.log("Processing samples...")
-                returns.append(self.log_avg_returns(paths))
-                samples_data = self.process_samples(itr, paths)
+                samples_data = self.process_samples(itr, samples)
 
                 if not self.skip_policy_update:
                     logger.log("Optimizing policy...")
+                    # Another issue is that the expert trajectories start from
+                    # a particular set of random seeds, and that controls how
+                    # the resets happen. This means that the difference between
+                    # environment seeds might be enough to make the
+                    # discriminator's job easy.
                     self.optimize_policy(itr, samples_data)
 
                 logger.record_tabular(
                     "PolicyBufferOriginalTaskRewardMean",
-                    self.policy.learner.mean_reward
+                    self.sampler.mean_reward
                 )
                 logger.record_tabular(
                     "PolicyBufferEpisodeLengthMean",
-                    self.policy.learner.mean_length
+                    self.sampler.mean_length
                 )
 
                 if itr % 10 == 0:
@@ -848,7 +880,6 @@ def airl(
             ablation=ablation,
         )
         print("Training arguments: ", training_kwargs)
-        training_kwargs['sampler_args'] = {}
         algo = IRLRunner(
             **training_kwargs,
             sampler_cls=sampling.PPOBatchSampler,

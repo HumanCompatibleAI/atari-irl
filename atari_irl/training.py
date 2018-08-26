@@ -2,11 +2,12 @@ import numpy as np
 
 from baselines import logger
 from baselines.common import explained_variance
-from baselines.ppo2.ppo2 import constfn, safemean
+from baselines.ppo2.ppo2 import safemean
 from baselines.ppo2 import ppo2
 
-from . import policies, utils
-from .sampling import PPOSample
+from . import policies
+from .sampling import PPOBatchSampler
+from .optimizers import PPOOptimizer, make_batching_config
 
 from collections import deque, namedtuple
 import time
@@ -19,47 +20,6 @@ PPOBatch = namedtuple('PPOBatch', [
 PPOBatch.train_args = lambda self: (
     self.obs, self.returns, self.masks, self.actions, self.values, self.neglogpacs
 )
-BatchingConfig = namedtuple('BatchingInfo', [
-    'nbatch', 'nbatch_train', 'noptepochs', 'nenvs', 'nsteps', 'nminibatches'
-])
-
-def train_steps(
-        *, model, run_info, batching_config, lrnow, cliprangenow, nbatch_train
-):
-    states = run_info.states
-    nbatch, noptepochs = batching_config.nbatch, batching_config.noptepochs
-    nenvs, nminibatches = batching_config.nenvs, batching_config.nminibatches
-    nsteps = batching_config.nsteps
-
-    mblossvals = []
-    if states is None:  # nonrecurrent version
-        inds = np.arange(nbatch)
-        for _ in range(noptepochs):
-            np.random.shuffle(inds)
-            for start in range(0, nbatch, nbatch_train):
-                end = start + nbatch_train
-                mbinds = inds[start:end]
-                slices = (arr[mbinds] for arr in run_info.train_args())
-                mblossvals.append(model.train(lrnow, cliprangenow, *slices))
-
-    else:  # recurrent version
-        assert nenvs % nminibatches == 0
-        envsperbatch = nenvs // nminibatches
-        envinds = np.arange(nenvs)
-        flatinds = np.arange(nenvs * nsteps).reshape(nenvs, nsteps)
-        envsperbatch = nbatch_train // nsteps
-        for _ in range(noptepochs):
-            np.random.shuffle(envinds)
-            for start in range(0, nenvs, envsperbatch):
-                end = start + envsperbatch
-                mbenvinds = envinds[start:end]
-                mbflatinds = flatinds[mbenvinds].ravel()
-                slices = (arr[mbflatinds] for arr in run_info.train_args())
-                mbstates = states[mbenvinds]
-                mblossvals.append(model.train(lrnow, cliprangenow, *slices, mbstates))
-
-    return mblossvals
-
 
 def print_log(
         *, model, run_info, batching_config,
@@ -96,16 +56,6 @@ def setup_policy(*, model_args, nenvs, ob_space, ac_space, env, save_env, checkp
         else:
             policy = policies.Policy(model_args)
     return policy
-
-
-def make_batching_config(*,env, nsteps, noptepochs, nminibatches):
-    nenvs = env.num_envs
-    nbatch = nenvs * nsteps
-    nbatch_train = nbatch // nminibatches
-    return BatchingConfig(
-        nbatch=nbatch, nbatch_train=nbatch_train, noptepochs=noptepochs,
-        nenvs=nenvs, nsteps=nsteps, nminibatches=nminibatches
-    )
 
 
 def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
@@ -152,116 +102,6 @@ def ppo_samples_to_trajectory_format(ppo_samples, num_envs=8):
                 trajectories[i]
 
 
-class Runner(ppo2.AbstractEnvRunner):
-    """
-    This is the PPO2 runner, but splitting the sampling and processing stage up
-    more explicitly
-    """
-    def __init__(self, *, env, model, nsteps, gamma, lam):
-        super().__init__(env=env, model=model, nsteps=nsteps)
-        self.lam = lam
-        self.gamma = gamma
-
-    def sample(self):
-        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
-        mb_states = self.states
-        epinfos = []
-        for _ in range(self.nsteps):
-            actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
-            mb_obs.append(self.obs.copy())
-            mb_actions.append(actions)
-            mb_values.append(values)
-            mb_neglogpacs.append(neglogpacs)
-            mb_dones.append(self.dones)
-
-            should_show = False # np.random.random() > .95
-            if should_show:
-                print()
-                obs_summaries = '\t'.join([f"{o[0,0,0]}{o[0,-1,0]}" for o in self.obs])
-                act_summaries = '\t'.join([str(a) for a in actions])
-                print(f"State:\t{obs_summaries}")
-                print(f"Action:\t{act_summaries}")
-
-            self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-
-            self.env.render()
-
-            if should_show:
-                rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
-                print(f"Reward:\t{rew}")
-                print()
-
-            for info in infos:
-                maybeepinfo = info.get('episode')
-                if maybeepinfo:
-                    epinfos.append(maybeepinfo)
-            mb_rewards.append(rewards)
-
-        return PPOSample(
-            mb_obs, mb_rewards, mb_actions, mb_values, mb_dones,
-            mb_neglogpacs, mb_states, epinfos, self
-        )
-
-    def process_ppo_samples(
-            self, mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs,
-            mb_states, epinfos
-    ):
-        #batch of steps to batch of rollouts
-        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
-        mb_obs = np.asarray(mb_obs, dtype=self.obs.dtype)
-        mb_rewards = np.asarray(mb_rewards, dtype=np.float32)
-        mb_actions = np.asarray(mb_actions)
-        mb_values = np.asarray(mb_values, dtype=np.float32)
-        mb_neglogpacs = np.asarray(mb_neglogpacs, dtype=np.float32)
-        mb_dones = np.asarray(mb_dones, dtype=np.bool)
-        last_values = self.model.value(self.obs, self.states, self.dones)
-        #discount/bootstrap off value fn
-        mb_returns = np.zeros_like(mb_rewards)
-        mb_advs = np.zeros_like(mb_rewards)
-        lastgaelam = 0
-        for t in reversed(range(self.nsteps)):
-            if t == self.nsteps - 1:
-                nextnonterminal = 1.0 - self.dones
-                nextvalues = last_values
-            else:
-                nextnonterminal = 1.0 - mb_dones[t+1]
-                nextvalues = mb_values[t+1]
-            delta = mb_rewards[t] + self.gamma * nextvalues * nextnonterminal - mb_values[t]
-            mb_advs[t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
-        mb_returns = mb_advs + mb_values
-        return (*map(ppo2.sf01, (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)),
-            mb_states, epinfos)
-
-    def process_trajectory(self, traj):
-        def batch_reshape(single_traj_data):
-            single_traj_data = np.asarray(single_traj_data)
-            s = single_traj_data.shape
-            return single_traj_data.reshape(s[0], 1, *s[1:])
-
-        agent_info = traj['agent_infos']
-        self.state = None
-        self.obs[:] = traj['observations'][-1]
-        self.dones = np.ones(self.env.num_envs)
-        dones = np.zeros(agent_info['values'].shape)
-        dones[-1] = 1
-        # This is actually kind of weird w/r/t to the PPO code, because the
-        # batch length is so much longer. Maybe this will work? But if PPO
-        # ablations don't crash, but fail to learn this is probably why.
-        return self.process_ppo_samples(
-            # The easy stuff that we just observe
-            batch_reshape(traj['observations']),
-            np.hstack([batch_reshape(traj['rewards']) for _ in range(8)]),
-            batch_reshape(traj['actions']).argmax(axis=1),
-            # now the things from the agent info
-            agent_info['values'], dones, agent_info['neglogpacs'],
-            # and the annotations
-            None, traj['env_infos']
-        )
-
-    def run(self):
-        return self.sample().to_ppo_batch()
-
-
 class Learner:
     def __init__(self, policy_class, env, *, total_timesteps, nsteps=2048,
                  ent_coef=0.0, lr=3e-4, vf_coef=0.5,  max_grad_norm=0.5,
@@ -271,24 +111,16 @@ class Learner:
 
         print(locals())
 
-        # Deal with constant arguments
-        if isinstance(lr, float): lr = constfn(lr)
-        else: assert callable(lr)
-        if isinstance(cliprange, float): cliprange = constfn(cliprange)
-        else: assert callable(cliprange)
-
-        self.lr = lr
-        self.cliprange = cliprange
-
         total_timesteps = int(total_timesteps)
+        batching_config = make_batching_config(
+            nenvs=env.num_envs,
+            nsteps=nsteps,
+            noptepochs=noptepochs,
+            nminibatches=nminibatches
+        )
 
         ob_space = env.observation_space
         ac_space = env.action_space
-
-        batching_config = make_batching_config(
-            env=env, nsteps=nsteps, noptepochs=noptepochs,
-            nminibatches=nminibatches
-        )
 
         model_args = dict(
             policy=policy_class, ob_space=ob_space, ac_space=ac_space,
@@ -304,18 +136,23 @@ class Learner:
         )
 
         model = policy.model
-        runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
+        sampler = PPOBatchSampler(env=env, model=model, nsteps=nsteps)
+        optimizer = PPOOptimizer(
+            policy=policy, batching_config=batching_config,
+            lr=lr, cliprange=cliprange, total_timesteps=total_timesteps
+        )
+
+        self.gamma = gamma
+        self.lam = lam
 
         # Set our major learner objects
-        self.batching_config = batching_config
         self.policy = policy
         self.model  = model
-        self.runner = runner
+        self.sampler = sampler
+        self.optimizer = optimizer
 
         # Set our last few run configurations
         self.callbacks = []
-        self.nbatch = batching_config.nbatch
-        self.nupdates = total_timesteps // batching_config.nbatch
 
         # Initialize the objects that will change as we learn
         self._update = 1
@@ -331,56 +168,30 @@ class Learner:
     def update(self):
         return self._update
 
-    @property
-    def mean_reward(self):
-        return safemean([epinfo['r'] for epinfo in self._epinfobuf])
-
-    @property
-    def mean_length(self):
-        return safemean([epinfo['l'] for epinfo in self._epinfobuf])
-
     def obtain_samples(self, itr):
         # Run the model on the environments
-        self._run_info = self.runner.run()
+        self._run_info = self.sampler.run().to_ppo_batch(gamma=self.gamma, lam=self.lam)
         self._epinfobuf.extend(self._run_info.epinfos)
         self._itr = itr
 
     def optimize_policy(self, itr):
         assert self._itr == itr
-
-        # initialize our start time if we haven't already
         if not self._tfirststart:
            self._tfirststart = time.time()
-
-        # compute our learning rate and clip ranges
-        assert self.nbatch % self.batching_config.nminibatches == 0
-        nbatch_train = self.nbatch // self.batching_config.nminibatches
         tstart = time.time()
-        frac = 1.0 - (self._update - 1.0) / self.nupdates
-        assert frac > 0.0
-        lrnow = self.lr(frac)
-        cliprangenow = self.cliprange(frac)
 
-        # Run the training steps for PPO
-        mblossvals = train_steps(
-            model=self.policy.model,
-            run_info=self._run_info,
-            batching_config=self.batching_config,
-            lrnow=lrnow,
-            cliprangenow=cliprangenow,
-            nbatch_train=nbatch_train
-        )
+        # Actually do the optimization
+        self._lossvals = self.optimizer.optimize_policy(itr, self._run_info)
 
-        self._lossvals = np.mean(mblossvals, axis=0)
         self._tnow = time.time()
-        self._fps = int(self.nbatch / (self._tnow - tstart))
+        self._fps = int(self.optimizer.nbatch / (self._tnow - tstart))
 
         for check, fn in self.callbacks:
             if check(self.update):
                 fn(**locals())
 
         self._update += 1
-        if self._update > self.nupdates:
+        if self._update > self.optimizer.nupdates:
             logger.log("Warning, exceeded planned number of updates")
 
     def step(self):
@@ -397,7 +208,7 @@ class Learner:
     @staticmethod
     def print_log(self, **kwargs):
         print_log(
-            model=self.model, batching_config=self.batching_config,
+            model=self.model, batching_config=self.optimizer.batching_config,
             update=self.update, epinfobuf=self._epinfobuf,
             tfirststart=self._tfirststart, run_info=self._run_info,
             lossvals=self._lossvals, fps=self._fps, tnow=self._tnow
@@ -411,7 +222,7 @@ class Learner:
             )
         should_yield = self.check_update_interval(yield_freq)
 
-        while self.update < self.nupdates:
+        while self.update < self.optimizer.nupdates:
             self.step()
             if should_yield(self.update):
                 yield yield_fn(self)

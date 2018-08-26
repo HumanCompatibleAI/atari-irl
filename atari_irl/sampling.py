@@ -1,11 +1,18 @@
 import numpy as np
 import tensorflow as tf
-from . import utils, training
-from collections import namedtuple
+from . import utils
+from collections import namedtuple, deque
 
 from rllab.misc.overrides import overrides
 from rllab.sampler.base import BaseSampler
 from sandbox.rocky.tf.samplers.vectorized_sampler import VectorizedSampler
+
+from baselines.ppo2 import ppo2
+
+"""
+Heavily based on the ppo2 implementation found in the OpenAI baselines library,
+particularly in the PPOSampler class.
+"""
 
 # This is a PPO Batch that the OpenAI Baselines PPO code uses as its underlying
 # representation
@@ -98,7 +105,7 @@ class PPOSample:
     """
     def __init__(
             self, obs, rewards, actions, values, dones, neglogpacs, states,
-            epinfos, runner
+            epinfos, sampler
     ):
         self.obs = np.asarray(obs)
         self.rewards = np.asarray(rewards)
@@ -108,23 +115,23 @@ class PPOSample:
         self.neglogpacs = np.asarray(neglogpacs)
         self.states = states
         self.epinfos = epinfos
-        self.runner = runner
+
+        self.sampler = sampler
 
         self.sample_batch_timesteps = self.obs.shape[0]
         self.sample_batch_num_envs = self.obs.shape[1]
         self.sample_batch_size = (
             self.sample_batch_timesteps * self.sample_batch_num_envs
         )
-        self.train_batch_size = self.runner.model.train_model.X.shape[0].value
+        self.train_batch_size = self.sampler.model.train_model.X.shape[0].value
         assert self.sample_batch_size % self.train_batch_size == 0
 
         self.probabilities = self._get_sample_probabilities()
 
     def to_ppo_batch(self) -> PPOBatch:
-        return PPOBatch(*self.runner.process_ppo_samples(
-            self.obs, self.rewards, self.actions, self.values, self.dones,
-            self.neglogpacs, self.states, self.epinfos
-        ))
+        return self.sampler.process_to_ppo_batch(
+            self, gamma=self.sampler.gamma, lam=self.sampler.lam
+        )
 
     def _ravel_time_env_batch_to_train_batch(self, inpt):
         assert inpt.shape[0] == self.sample_batch_timesteps
@@ -154,12 +161,10 @@ class PPOSample:
 
     def _get_sample_probabilities(self):
         train_batched_obs = self._ravel_time_env_batch_to_train_batch(self.obs)
-        sess = tf.get_default_session()
-        tm = self.runner.model.train_model
         ps = np.asarray([
             # we weirdly don't have direct access to the probabilities anywhere
             # so we need to construct this node from teh logits
-            sess.run(tf.nn.softmax(tm.pd.logits), {tm.X: train_batch_obs})
+            self.sampler.get_probabilities_for_obs(train_batch_obs)
             for train_batch_obs in train_batched_obs
         ])
         return self._ravel_train_batch_to_time_env_batch(ps)
@@ -187,13 +192,27 @@ class PPOSample:
         return Trajectories(buffer, self)
 
 
-class PPOBatchSampler(BaseSampler):
+class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
     # If you want to use the baselines PPO sampler as a sampler for the
     # airl interfaced code, use this.
-    def __init__(self, algo):
-        super(PPOBatchSampler, self).__init__(algo)
-        assert isinstance(algo.policy.learner, training.Learner)
+    def __init__(self, algo, *, nsteps, baselines_venv, gamma, lam):
+        model = algo.policy.model
+        env = baselines_venv
+        # The biggest weird thing about this piece of code is that it does a
+        # a bunch of work to handle the context of what happens if the model
+        # that we're training is actually recurrent.
+        # This means that we store the observations, states, and dones so that
+        # we can continue a run.
+        # We have not actually tested that functionality
+        ppo2.AbstractEnvRunner.__init__(self, env=env, model=model, nsteps=nsteps)
+        self.algo = algo
+        self.env = env
+        self.model = model
+        self.nsteps = nsteps
+        self.gamma = gamma
+        self.lam = lam
         self.cur_sample = None
+        self._epinfobuf = deque(maxlen=100)
 
     def start_worker(self):
         pass
@@ -201,17 +220,161 @@ class PPOBatchSampler(BaseSampler):
     def shutdown_worker(self):
         pass
 
+    def run(self):
+        return self._sample()
+
+    def get_probabilities_for_obs(self, obs):
+        tm = self.model.train_model
+        return tf.get_default_session().run(
+            tf.nn.softmax(tm.pd.logits),
+            {tm.X: obs}
+        )
+
+    def _sample(self) -> PPOSample:
+        mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
+        mb_states = self.states
+        epinfos = []
+        for _ in range(self.nsteps):
+            actions, values, self.states, neglogpacs = self.model.step(self.obs, self.states, self.dones)
+            mb_obs.append(self.obs.copy())
+            mb_actions.append(actions)
+            mb_values.append(values)
+            mb_neglogpacs.append(neglogpacs)
+            mb_dones.append(self.dones)
+
+            should_show = False and np.random.random() > .95
+
+            if should_show:
+                print()
+                obs_summaries = '\t'.join([f"{o[0,0,0]}{o[0,-1,0]}" for o in self.obs])
+                act_summaries = '\t'.join([str(a) for a in actions])
+                print(f"State:\t{obs_summaries}")
+                print(f"Action:\t{act_summaries}")
+
+            self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+
+            if should_show:
+                rew = '\t'.join(['{:.3f}'.format(r) for r in rewards])
+                print(f"Reward:\t{rew}")
+                print()
+
+
+            for info in infos:
+                maybeepinfo = info.get('episode')
+                if maybeepinfo:
+                    epinfos.append(maybeepinfo)
+
+            mb_rewards.append(rewards)
+
+        return PPOSample(
+            mb_obs, mb_rewards, mb_actions, mb_values, mb_dones,
+            mb_neglogpacs, mb_states, epinfos, self
+        )
+
+    def _process_ppo_samples(
+            self, *,
+            obs, rewards, actions, values, dones, neglogpacs,
+            states, epinfos,
+            gamma, lam
+    ) -> PPOBatch:
+        #batch of steps to batch of rollouts
+        mb_obs = np.asarray(obs, dtype=self.obs.dtype)
+        mb_rewards = np.asarray(rewards, dtype=np.float32)
+        mb_actions = np.asarray(actions)
+        mb_values = np.asarray(values, dtype=np.float32)
+        mb_dones = np.asarray(dones, dtype=np.bool)
+        mb_neglogpacs = np.asarray(neglogpacs, dtype=np.float32)
+        last_values = self.model.value(self.obs, self.states, self.dones)
+        #discount/bootstrap off value fn
+        mb_advs = np.zeros_like(mb_rewards)
+        lastgaelam = 0
+        for t in reversed(range(self.nsteps)):
+            if t == self.nsteps - 1:
+                nextnonterminal = 1.0 - self.dones
+                nextvalues = last_values
+            else:
+                nextnonterminal = 1.0 - mb_dones[t+1]
+                nextvalues = mb_values[t+1]
+            delta = mb_rewards[t] + gamma * nextvalues * nextnonterminal - mb_values[t]
+            mb_advs[t] = lastgaelam = delta + gamma * lam * nextnonterminal * lastgaelam
+        mb_returns = mb_advs + mb_values
+        return PPOBatch(
+            *map(
+                ppo2.sf01,
+                (mb_obs, mb_returns, mb_dones, mb_actions, mb_values, mb_neglogpacs)
+            ),
+            states,
+            epinfos
+        )
+
+    def process_to_ppo_batch(
+            self, ppo_sample: PPOSample, *, gamma: float, lam: float
+    ) -> PPOBatch:
+        return self._process_ppo_samples(
+            obs=ppo_sample.obs,
+            rewards=ppo_sample.rewards,
+            actions=ppo_sample.actions,
+            values=ppo_sample.values,
+            dones=ppo_sample.dones,
+            neglogpacs=ppo_sample.neglogpacs,
+            states=ppo_sample.states,
+            epinfos=ppo_sample.epinfos,
+            gamma=gamma, lam=lam
+        )
+
+    def process_trajectory(self, traj, *, gamma, lam):
+        def batch_reshape(single_traj_data):
+            single_traj_data = np.asarray(single_traj_data)
+            s = single_traj_data.shape
+            return single_traj_data.reshape(s[0], 1, *s[1:])
+
+        agent_info = traj['agent_infos']
+
+        # These are trying to deal with the fact that the PPOSampler maintains
+        # an internal state that it uses to remember information between
+        # trajectories, which is important if you have a recurrent policy
+        self.state = None
+        self.obs[:] = traj['observations'][-1]
+        self.dones = np.ones(self.env.num_envs)
+        dones = np.zeros(agent_info['values'].shape)
+        # This is a full trajectory, so it's a bunch of not-done, followed by
+        # a single done
+        dones[-1] = 1
+
+        # This is actually kind of weird w/r/t to the PPO code, because the
+        # batch length is so much longer. Maybe this will work? But if PPO
+        # ablations don't crash, but fail to learn this is probably why.
+        return self._process_ppo_samples(
+            # The easy stuff that we just observe
+            obs=batch_reshape(traj['observations']),
+            rewards=np.hstack([batch_reshape(traj['rewards']) for _ in range(8)]),
+            actions=batch_reshape(traj['actions']).argmax(axis=1),
+            # now the things from the agent info
+            values=agent_info['values'],
+            dones=dones,
+            neglogpacs=agent_info['neglogpacs'],
+            states=None, # recurrent trajectories should include states
+            # and the annotations
+            epinfos=traj['env_infos'],
+            gamma=gamma, lam=lam
+        )
+
     def obtain_samples(self, itr):
-        self.cur_sample = self.algo.policy.learner.runner.sample()
-        samples = self.cur_sample.to_trajectories()
-        self.algo.irl_model._insert_next_state(samples)
-        return samples
+        self.cur_sample = self._sample()
+        return self.cur_sample
 
     def process_samples(self, itr, paths):
         ppo_batch = self.cur_sample.to_ppo_batch()
-        self.algo.policy.learner._run_info = ppo_batch
-        self.algo.policy.learner._epinfobuf.extend(ppo_batch.epinfos)
+        self._epinfobuf.extend(ppo_batch.epinfos)
         return ppo_batch
+
+    @property
+    def mean_reward(self):
+        return ppo2.safemean([epinfo['r'] for epinfo in self._epinfobuf])
+
+    @property
+    def mean_length(self):
+        return ppo2.safemean([epinfo['l'] for epinfo in self._epinfobuf])
 
 
 class FullTrajectorySampler(VectorizedSampler):
