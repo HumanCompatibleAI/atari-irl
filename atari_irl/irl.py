@@ -375,6 +375,8 @@ class AtariAIRL(AIRL):
             self.step = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(tot_loss)
             self._make_param_ops(_vs)
 
+            self.grad_reward = tf.gradients(self.reward, [self.obs_t, self.act_t])
+
     def get_itr_snapshot(self):
         return {
             'config': self.init_args,
@@ -455,7 +457,7 @@ class AtariAIRL(AIRL):
         return mean_loss
 
     @overrides
-    def eval(self, paths, **kwargs):
+    def eval(self, paths, show_grad=False, **kwargs):
         """
         Return bonus
         """
@@ -476,9 +478,21 @@ class AtariAIRL(AIRL):
             obs, acts = self.extract_paths(paths)
             if self.drop_framestack:
                 obs = obs[:, :, :, -1:]
-            reward = tf.get_default_session().run(self.reward,
-                                              feed_dict={self.act_t: acts, self.obs_t: obs})
+
+            if show_grad:
+                reward, grad = tf.get_default_session().run(
+                    [self.reward, self.grad_reward],
+                    feed_dict={self.act_t: acts, self.obs_t: obs}
+                )
+                grad_obs = grad[0]
+                grad_act = grad[1]
+            else:
+                reward = tf.get_default_session().run(
+                    self.reward, feed_dict={self.act_t: acts, self.obs_t: obs}
+                )
             score = reward[:,0]
+        if show_grad:
+            return self.unpack(score, paths), self.unpack(grad_obs, paths), self.unpack(grad_act, paths)
         return self.unpack(score, paths)
 
 
