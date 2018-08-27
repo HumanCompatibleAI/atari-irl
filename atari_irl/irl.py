@@ -458,8 +458,13 @@ class AtariAIRL(AIRL):
         # eval samples under current policy
         self._compute_path_probs(paths, insert=True)
 
-        # eval expert log probs under current policy
-        self.eval_expert_probs(self.expert_trajs, policy, insert=True)
+        if self.rescore_expert_trajs or itr == 0:
+            # eval expert log probs under current policy
+            self.eval_expert_probs(self.expert_trajs, policy, insert=True)
+        else:
+            for traj in self.expert_trajs:
+                assert 'agent_infos' in traj or 'a_logprobs' in traj
+
 
         self._insert_next_state(paths)
         self._insert_next_state(self.expert_trajs)
