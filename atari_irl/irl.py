@@ -217,7 +217,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         param_tensors = self.get_params()
         restores = []
         for tf_tensor, np_array in zip(param_tensors, params):
-            print(tf_tensor, np_array.shape)
             restores.append(tf_tensor.assign(np_array))
         tf.get_default_session().run(restores)
 
