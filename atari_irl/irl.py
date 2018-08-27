@@ -755,7 +755,7 @@ def get_training_kwargs(
 
     baselines_venv = baselines_venv
 
-    nsteps = 2048
+    nsteps = 128
     batching_config = training.make_batching_config(
         nenvs=baselines_venv.num_envs,
         nsteps=nsteps,
