@@ -361,6 +361,8 @@ class AtariAIRL(AIRL):
         self.state_only=state_only
         self.max_itrs=max_itrs
         self.drop_framestack=drop_framestack
+        self.expert_cache = None
+        self.rescore_expert_trajs = rescore_expert_trajs
         # build energy model
         with tf.variable_scope(name) as _vs:
             # Should be batch_size x T x dO/dU
@@ -461,19 +463,23 @@ class AtariAIRL(AIRL):
         if self.rescore_expert_trajs or itr == 0:
             # eval expert log probs under current policy
             self.eval_expert_probs(self.expert_trajs, policy, insert=True)
+            self._insert_next_state(self.expert_trajs)
+            self.expert_cache = self.extract_paths(
+                self.expert_trajs, keys=(
+                    'observations', 'observations_next',
+                    'actions', 'actions_next', 'a_logprobs'
+                )
+            )
         else:
             for traj in self.expert_trajs:
                 assert 'agent_infos' in traj or 'a_logprobs' in traj
-
+            assert self.expert_cache is not None
 
         self._insert_next_state(paths)
-        self._insert_next_state(self.expert_trajs)
         obs, obs_next, acts, acts_next, path_probs = \
             self.extract_paths(paths,
                                keys=('observations', 'observations_next', 'actions', 'actions_next', 'a_logprobs'))
-        expert_obs, expert_obs_next, expert_acts, expert_acts_next, expert_probs = \
-            self.extract_paths(self.expert_trajs,
-                               keys=('observations', 'observations_next', 'actions', 'actions_next', 'a_logprobs'))
+        expert_obs, expert_obs_next, expert_acts, expert_acts_next, expert_probs = self.expert_cache
 
 
         # Train discriminator
