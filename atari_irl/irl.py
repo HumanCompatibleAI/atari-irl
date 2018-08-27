@@ -320,7 +320,8 @@ class AtariAIRL(AIRL):
                  max_itrs=100,
                  fusion=False,
                  name='airl',
-                 drop_framestack=False
+                 drop_framestack=False,
+                 rescore_expert_trajs=True
                  ):
         super(AIRL, self).__init__()
 
@@ -338,7 +339,8 @@ class AtariAIRL(AIRL):
             state_only=state_only,
             max_itrs=max_itrs,
             fusion=fusion,
-            name=name
+            name=name,
+            rescore_expert_trajs=rescore_expert_trajs
         )
 
         if fusion:
@@ -406,6 +408,33 @@ class AtariAIRL(AIRL):
 
             self.grad_reward = tf.gradients(self.reward, [self.obs_t, self.act_t])
 
+    def change_kwargs(self, **kwargs):
+        for key, value in kwargs.items():
+            # All of these are used in graph construction, and so we can't
+            # just changing the parameter value won't do anything here
+            assert key not in {
+                'model',
+                'env_spec',
+                'dO',
+                'dOshape',
+                'dU',
+                'discount',
+                'gamma',
+                'drop_framestack',
+                'reward_arch',
+                'reward_arch_args',
+                'value_fn_arch',
+                'state_only',
+                'name'
+            }
+            # We have to serialize it
+            assert key in self.init_args
+            # And here's a whitelist just to be safe
+            assert key in {
+                'rescore_expert_trajs'
+            }
+            self.__setattr__(key, value)
+
     def get_itr_snapshot(self):
         return {
             'config': self.init_args,
@@ -419,7 +448,7 @@ class AtariAIRL(AIRL):
         self.set_params(data['tf_params'])
 
     @overrides
-    def fit(self, paths, policy=None, batch_size=128, logger=None, lr=1e-3,**kwargs):
+    def fit(self, paths, policy=None, batch_size=128, logger=None, lr=1e-3, itr=0, **kwargs):
 
         if self.fusion is not None:
             old_paths = self.fusion.sample_paths(n=len(paths))
@@ -545,6 +574,7 @@ def reward_model_config(
         # so we have to provide it
         env_spec,
         expert_trajs,
+        ablation='none',
         model=AtariAIRL,
         state_only=False,
         reward_arch=cnn_net,
@@ -610,7 +640,7 @@ def make_irl_model(model_cfg):
 
 
 Ablation = namedtuple('Ablation', [
-    'policy_modifiers', 'training_modifiers'
+    'policy_modifiers', 'discriminator_modifiers', 'training_modifiers'
 ])
 
 
@@ -623,10 +653,12 @@ def get_ablation_modifiers(*, irl_model, ablation):
     # Default to wrapping the environment with the irl rewards
     ablations = defaultdict(lambda: Ablation(
         policy_modifiers={'baseline_wrappers': irl_reward_wrappers},
+        discriminator_modifiers={},
         training_modifiers={}
     ))
     ablations['train_rl'] = Ablation(
         policy_modifiers={'baseline_wrappers': []},
+        discriminator_modifiers={},
         training_modifiers={
             'irl_model_wt': 0.0,
             # TODO(Aaron): Figure out if this should be false...
@@ -636,12 +668,16 @@ def get_ablation_modifiers(*, irl_model, ablation):
     )
     ablations['train_discriminator'] = Ablation(
         policy_modifiers={'baseline_wrappers': []},
+        discriminator_modifiers={
+            'rescore_expert_trajs': False
+        },
         training_modifiers={
             'skip_policy_update': True
         }
     )
     ablations['run_expert'] = Ablation(
         policy_modifiers={'baseline_wrappers': []},
+        discriminator_modifiers={},
         training_modifiers={
             'irl_model_wt': 0.0,
             'zero_envvironment_reward': True,
@@ -678,6 +714,7 @@ def get_training_kwargs(
     policy_cfg = policy_config(**policy_cfg)
     reward_model_cfg = reward_model_config(
         env_spec=envs.spec,
+        ablation=ablation,
         **reward_model_cfg
     )
     training_cfg = training_config(**training_cfg)
@@ -691,6 +728,8 @@ def get_training_kwargs(
     ablation_modifiers = get_ablation_modifiers(
         irl_model=irl_model, ablation=ablation
     )
+
+    irl_model.change_kwargs(**ablation_modifiers.discriminator_modifiers)
 
     # Construct our fixed training keyword arguments. Other values for these
     # are incorrect
