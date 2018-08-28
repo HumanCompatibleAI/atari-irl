@@ -126,6 +126,9 @@ class PPOSample:
         self.train_batch_size = self.sampler.model.train_model.X.shape[0].value
         assert self.sample_batch_size % self.train_batch_size == 0
 
+        self.obs_next = None
+        self.actions_next = None
+
         self.probabilities = self._get_sample_probabilities()
 
     def to_ppo_batch(self) -> PPOBatch:
@@ -190,6 +193,37 @@ class PPOSample:
             traj.finalize()
 
         return Trajectories(buffer, self)
+
+    def get_path_key(self, key, pad_val=0.0):
+        if key == 'observations':
+            return self.obs
+        elif key == 'actions':
+            return self.actions
+        elif key == 'observations_next':
+            if self.obs_next is None:
+                self.obs_next = np.r_[
+                    self.obs[1:],
+                    pad_val*np.expand_dims(np.ones_like(self.obs[0]), axis=0)
+                ]
+            return self.obs_next
+        elif key == 'actions_next':
+            if self.actions_next is None:
+                self.actions_next = np.r_[
+                    self.actions[1:],
+                    pad_val*np.expand_dims(np.ones_like(self.actions[0]), axis=0)
+                ]
+            return self.actions_next
+        elif key == 'a_logprobs':
+            return -1 * self.neglogpacs
+        else:
+            assert False
+
+    def extract_paths(self, keys):
+        data = [ppo2.sf01(self.get_path_key(key)) for key in keys]
+        return [
+            d if 'actions' not in key else utils.one_hot(d.astype(np.int32), 6)
+            for d, key in zip(data, keys)
+        ]
 
 
 class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
