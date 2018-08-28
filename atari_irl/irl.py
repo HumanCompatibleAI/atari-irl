@@ -401,11 +401,8 @@ class AtariAIRL(AIRL):
 
             log_pq = tf.reduce_logsumexp([log_p_tau, log_q_tau], axis=0)
             self.discrim_output = tf.exp(log_p_tau-log_pq)
-            cent_loss = -tf.reduce_mean(self.labels*(log_p_tau-log_pq) + (1-self.labels)*(log_q_tau-log_pq))
-
-            self.loss = cent_loss
-            tot_loss = self.loss
-            self.step = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(tot_loss)
+            self.loss = -tf.reduce_mean(self.labels*(log_p_tau-log_pq) + (1-self.labels)*(log_q_tau-log_pq))
+            self.step = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
             self._make_param_ops(_vs)
 
             self.grad_reward = tf.gradients(self.reward, [self.obs_t, self.act_t])
