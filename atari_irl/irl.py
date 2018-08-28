@@ -717,7 +717,7 @@ def rllab_wrap_venv(envs):
 def get_training_kwargs(
         *,
         venv,
-        ablation='normal',
+        ablation='normal', nsteps=128,
         reward_model_cfg={}, policy_cfg={}, training_cfg={}
 ):
     envs = rllab_wrap_venv(venv)
@@ -755,7 +755,6 @@ def get_training_kwargs(
 
     baselines_venv = baselines_venv
 
-    nsteps = 128
     batching_config = training.make_batching_config(
         nenvs=baselines_venv.num_envs,
         nsteps=nsteps,
