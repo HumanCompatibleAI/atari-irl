@@ -117,3 +117,80 @@ def one_hot(x, dim):
     for n, i in enumerate(x):
         ans[n, i] = 1
     return ans
+
+
+def batched_call(fn, batch_size, args):
+    N = args[0].shape[0]
+    for arg in args:
+        assert arg.shape[0] == N
+
+    # Things get super slow if we don't do this
+    if N == batch_size:
+        return fn(*args)
+
+    arg0_batches = []
+    fn_results = []
+
+    start = 0
+
+    def slice_result(result, subslice):
+        if isinstance(result, dict):
+            return dict(
+                (key, value[subslice])
+                for key, value in result.items()
+            )
+        else:
+            return result[subslice]
+
+    def add_batch(*args_batch, subslice=None):
+        results_batch = fn(*args_batch)
+        if subslice:
+            results_batch = [slice_result(r, subslice) for r in results_batch]
+            args_batch = [slice_result(r, subslice) for r in args_batch]
+        fn_results.append(results_batch)
+        arg0_batches.append(args_batch[0])
+
+    # add data for all of the batches that cleanly fit inside the batch size
+    for start in range(0, N - batch_size, batch_size):
+        end = start + batch_size
+        add_batch(*[arg[start:end] for arg in args])
+
+    # add data for the last batch that would run past the end of the data if it
+    # were full
+    start += batch_size
+    if start != N:
+        remainder_slice = slice(start - N, batch_size)
+        add_batch(
+            *(arg[N - batch_size:N] for arg in args),
+            subslice=remainder_slice
+        )
+
+    # integrity check
+    final_arg0 = np.vstack(arg0_batches)
+
+    # reshape everything
+    final_results = []
+    for i, res in enumerate(fn_results[0]):
+        if isinstance(res, np.ndarray) or isinstance(res, list):
+            final_results.append(
+                np.vstack([results_batch[i] for results_batch in fn_results])
+            )
+        elif isinstance(res, dict):
+            for key, item in res.items():
+                assert isinstance(item, np.ndarray) or isinstance(item, list)
+            final_results.append(dict(
+                (
+                    key,
+                    np.vstack([
+                        results_batch[i][key] for results_batch in fn_results
+                    ])
+                )
+                for key in res.keys()
+            ))
+        else:
+            raise NotImplementedError
+
+    # Integrity checks in case I wrecked this
+    assert len(final_arg0) == N
+    assert np.isclose(final_arg0, args[0]).all()
+    return final_results
