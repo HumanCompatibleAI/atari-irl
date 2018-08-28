@@ -791,7 +791,7 @@ class IRLRunner(IRLTRPO):
             logger.record_tabular(
                 'OriginalTaskAverageReturn', samples.sampler.mean_reward
             )
-            #samples.rewards *= 0
+            samples.rewards *= 0
 
         if self.irl_model_wt <=0:
             return samples
@@ -808,8 +808,6 @@ class IRLRunner(IRLTRPO):
             logger.record_tabular('IRLLoss', mean_loss)
             self.__irl_params = self.irl_model.get_params()
 
-        #TODO(Aaron) reimplement this part
-        """
         probs = self.irl_model.eval(samples, gamma=self.discount, itr=itr)
         probs_flat = np.concatenate(probs)  # trajectory length varies
 
@@ -817,15 +815,9 @@ class IRLRunner(IRLTRPO):
         logger.record_tabular('IRLRewardMax', np.max(probs_flat))
         logger.record_tabular('IRLRewardMin', np.min(probs_flat))
 
+        if self.irl_model_wt > 0.0:
+            samples.rewards += self.irl_model_wt * probs
 
-        if self.irl_model.score_trajectories:
-            # TODO: should I add to reward here or after advantage computation?
-            for i, path in enumerate(paths):
-                path['rewards'][-1] += self.irl_model_wt * probs[i]
-        else:
-            for i, path in enumerate(paths):
-                path['rewards'] += self.irl_model_wt * probs[i]
-        """
         return samples
 
     def train(self):
