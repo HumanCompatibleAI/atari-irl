@@ -528,7 +528,7 @@ def reward_model_config(
         state_only=False,
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
-        score_discrim=False,
+        score_discrim=True,
         max_itrs=100,
         drop_framestack=False
 ):
