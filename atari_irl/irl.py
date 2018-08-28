@@ -448,15 +448,12 @@ class AtariAIRL(AIRL):
 
     @overrides
     def fit(self, paths, policy=None, batch_size=128, logger=None, lr=1e-3, itr=0, **kwargs):
-
         if self.fusion is not None:
             old_paths = self.fusion.sample_paths(n=len(paths))
             self.fusion.add_paths(paths)
             paths = paths+old_paths
 
-        # eval samples under current policy
-        self._compute_path_probs(paths, insert=True)
-
+        print(self.rescore_expert_trajs)
         if self.rescore_expert_trajs or itr == 0:
             # eval expert log probs under current policy
             self.eval_expert_probs(self.expert_trajs, policy, insert=True)
@@ -467,15 +464,14 @@ class AtariAIRL(AIRL):
                     'actions', 'actions_next', 'a_logprobs'
                 )
             )
-        else:
-            for traj in self.expert_trajs:
-                assert 'agent_infos' in traj or 'a_logprobs' in traj
-            assert self.expert_cache is not None
 
-        self._insert_next_state(paths)
-        obs, obs_next, acts, acts_next, path_probs = \
-            self.extract_paths(paths,
-                               keys=('observations', 'observations_next', 'actions', 'actions_next', 'a_logprobs'))
+        for traj in self.expert_trajs:
+            assert 'agent_infos' in traj or 'a_logprobs' in traj
+        assert self.expert_cache is not None
+
+        obs, obs_next, acts, acts_next, path_probs = paths.extract_paths((
+            'observations', 'observations_next', 'actions', 'actions_next', 'a_logprobs'
+        ))
         expert_obs, expert_obs_next, expert_acts, expert_acts_next, expert_probs = self.expert_cache
 
 
@@ -523,13 +519,12 @@ class AtariAIRL(AIRL):
         return mean_loss
 
     @overrides
-    def eval(self, paths, show_grad=False, **kwargs):
+    def eval(self, samples, show_grad=False, **kwargs):
         """
         Return bonus
         """
         if self.score_discrim:
-            self._compute_path_probs(paths, insert=True)
-            obs, obs_next, acts, path_probs = self.extract_paths(paths, keys=('observations', 'observations_next', 'actions', 'a_logprobs'))
+            obs, obs_next, acts, path_probs = samples.extract_paths(('observations', 'observations_next', 'actions', 'a_logprobs'))
             path_probs = np.expand_dims(path_probs, axis=1)
             if self.drop_framestack:
                 obs = obs[:, :, :, -1:]
@@ -541,25 +536,16 @@ class AtariAIRL(AIRL):
             score = np.log(scores) - np.log(1-scores)
             score = score[:,0]
         else:
-            obs, acts = self.extract_paths(paths)
+            obs, acts = samples.extract_paths(('observations', 'actions'))
             if self.drop_framestack:
                 obs = obs[:, :, :, -1:]
 
-            if show_grad:
-                reward, grad = tf.get_default_session().run(
-                    [self.reward, self.grad_reward],
-                    feed_dict={self.act_t: acts, self.obs_t: obs}
-                )
-                grad_obs = grad[0]
-                grad_act = grad[1]
-            else:
-                reward = tf.get_default_session().run(
-                    self.reward, feed_dict={self.act_t: acts, self.obs_t: obs}
-                )
+            reward = tf.get_default_session().run(
+                self.reward, feed_dict={self.act_t: acts, self.obs_t: obs}
+            )
             score = reward[:,0]
-        if show_grad:
-            return self.unpack(score, paths), self.unpack(grad_obs, paths), self.unpack(grad_act, paths)
-        return self.unpack(score, paths)
+        # TODO(Aaron, maybe): do something with show_grad
+        return samples._ravel_train_batch_to_time_env_batch(score)
 
 
 def policy_config(
@@ -846,10 +832,46 @@ class IRLRunner(IRLTRPO):
 
     @overrides
     def compute_irl(self, samples, itr=0):
-        # By only turning
-        paths = samples.to_trajectories()
-        self.irl_model._insert_next_state(paths)
-        return super().compute_irl(paths, itr)
+        if self.no_reward:
+            logger.record_tabular(
+                'OriginalTaskAverageReturn', samples.sampler.mean_reward
+            )
+            #samples.rewards *= 0
+
+        if self.irl_model_wt <=0:
+            return samples
+
+        if self.train_irl:
+            max_itrs = self.discrim_train_itrs
+            lr=1e-3
+            mean_loss = self.irl_model.fit(
+                samples,
+                policy=self.policy, itr=itr, max_itrs=max_itrs, lr=lr,
+                logger=logger
+            )
+
+            logger.record_tabular('IRLLoss', mean_loss)
+            self.__irl_params = self.irl_model.get_params()
+
+        #TODO(Aaron) reimplement this part
+        """
+        probs = self.irl_model.eval(samples, gamma=self.discount, itr=itr)
+        probs_flat = np.concatenate(probs)  # trajectory length varies
+
+        logger.record_tabular('IRLRewardMean', np.mean(probs_flat))
+        logger.record_tabular('IRLRewardMax', np.max(probs_flat))
+        logger.record_tabular('IRLRewardMin', np.min(probs_flat))
+
+
+        if self.irl_model.score_trajectories:
+            # TODO: should I add to reward here or after advantage computation?
+            for i, path in enumerate(paths):
+                path['rewards'][-1] += self.irl_model_wt * probs[i]
+        else:
+            for i, path in enumerate(paths):
+                path['rewards'] += self.irl_model_wt * probs[i]
+        """
+        return samples
 
     def train(self):
         sess = tf.get_default_session()
