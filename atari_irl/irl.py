@@ -596,7 +596,7 @@ Ablation = namedtuple('Ablation', [
 def get_ablation_modifiers(*, irl_model, ablation):
     irl_reward_wrappers = [
         wrap_env_with_args(VecRewardZeroingEnv),
-        wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
+        #wrap_env_with_args(VecIRLRewardEnv, reward_network=irl_model)
     ]
 
     # Default to wrapping the environment with the irl rewards
@@ -788,6 +788,9 @@ class IRLRunner(IRLTRPO):
     @overrides
     def compute_irl(self, samples, itr=0):
         if self.no_reward:
+            logger.record_tabular(
+                'EnvironmentBatchAverageReturn', np.mean(samples.rewards)
+            )
             logger.record_tabular(
                 'OriginalTaskAverageReturn', samples.sampler.mean_reward
             )

@@ -63,7 +63,7 @@ class TimeLimitEnv(gym.Wrapper):
 class VecRewardZeroingEnv(VecEnvWrapper):
     def step(self, actions):
         _1, reward, _2, _3 = self.venv.step(actions)
-        return _1, 0, _2, _3
+        return _1, np.zeros((_1.shape[0],)), _2, _3
 
     def reset(self):
         return self.venv.reset()
