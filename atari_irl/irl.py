@@ -403,25 +403,22 @@ class AtariAIRL(AIRL):
 
     @overrides
     def fit(self, paths, policy=None, batch_size=128, logger=None, lr=1e-3, itr=0, **kwargs):
-        if self.fusion is not None:
-            old_paths = self.fusion.sample_paths(n=len(paths))
-            self.fusion.add_paths(paths)
-            paths = paths+old_paths
-
-        print(self.rescore_expert_trajs)
         if self.rescore_expert_trajs or itr == 0:
             # eval expert log probs under current policy
-            self.eval_expert_probs(self.expert_trajs, policy, insert=True)
             self._insert_next_state(self.expert_trajs)
             self.expert_cache = self.extract_paths(
                 self.expert_trajs, keys=(
                     'observations', 'observations_next',
-                    'actions', 'actions_next', 'a_logprobs'
+                    'actions', 'actions_next'
                 )
             )
+            # add a_logprobs
+            self.expert_cache += (
+                paths.sampler.get_a_logprobs(
+                    self.expert_cache[0], self.expert_cache[2]
+                ),
+            )
 
-        for traj in self.expert_trajs:
-            assert 'agent_infos' in traj or 'a_logprobs' in traj
         assert self.expert_cache is not None
 
         obs, obs_next, acts, acts_next, path_probs = paths.extract_paths((

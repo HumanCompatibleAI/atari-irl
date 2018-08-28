@@ -275,6 +275,15 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
             {tm.X: obs}
         )
 
+    def get_a_logprobs(self, obs, acts):
+        probs = utils.batched_call(
+            # needs to be a tuple for the batched call to work
+            lambda obs: (self.get_probabilities_for_obs(obs),),
+            self.model.train_model.X.shape[0].value,
+            (obs, )
+        )[0]
+        return np.log((probs * acts).sum(axis=1))
+
     def _sample(self) -> PPOSample:
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
         mb_states = self.states
