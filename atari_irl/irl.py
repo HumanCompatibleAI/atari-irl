@@ -474,6 +474,9 @@ class AtariAIRL(AIRL):
         ))
         expert_obs, expert_obs_next, expert_acts, expert_acts_next, expert_probs = self.expert_cache
 
+        if self.drop_framestack:
+            expert_obs = expert_obs[:,:,:, -1:]
+            expert_obs_next = expert_obs_next[:, :, :, -1:]
 
         # Train discriminator
         for it in TrainingIterator(self.max_itrs, heartbeat=5):
@@ -491,10 +494,6 @@ class AtariAIRL(AIRL):
             act_batch = np.concatenate([act_batch, expert_act_batch], axis=0)
             nact_batch = np.concatenate([nact_batch, nexpert_act_batch], axis=0)
             lprobs_batch = np.expand_dims(np.concatenate([lprobs_batch, expert_lprobs_batch], axis=0), axis=1).astype(np.float32)
-
-            if self.drop_framestack:
-                obs_batch = obs_batch[:, :, :, -1:]
-                nobs_batch = nobs_batch[:, :, :, -1:]
 
             feed_dict = {
                 self.act_t: act_batch,
@@ -524,22 +523,26 @@ class AtariAIRL(AIRL):
         Return bonus
         """
         if self.score_discrim:
-            obs, obs_next, acts, path_probs = samples.extract_paths(('observations', 'observations_next', 'actions', 'a_logprobs'))
+            obs, obs_next, acts, path_probs = samples.extract_paths(
+                ('observations', 'observations_next', 'actions', 'a_logprobs'),
+                drop_framestack=self.drop_framestack
+            )
             path_probs = np.expand_dims(path_probs, axis=1)
-            if self.drop_framestack:
-                obs = obs[:, :, :, -1:]
-                obs_next = obs_next[:, :, :, -1:]
-            scores = tf.get_default_session().run(self.discrim_output,
-                                              feed_dict={self.act_t: acts, self.obs_t: obs,
-                                                         self.nobs_t: obs_next,
-                                                         self.lprobs: path_probs})
+            scores = tf.get_default_session().run(
+                self.discrim_output,
+                feed_dict={
+                    self.act_t: acts,
+                    self.obs_t: obs,
+                    self.nobs_t: obs_next,
+                    self.lprobs: path_probs
+                }
+            )
             score = np.log(scores) - np.log(1-scores)
             score = score[:,0]
         else:
-            obs, acts = samples.extract_paths(('observations', 'actions'))
-            if self.drop_framestack:
-                obs = obs[:, :, :, -1:]
-
+            obs, acts = samples.extract_paths(
+                ('observations', 'actions'), drop_framestack=self.drop_framestack
+            )
             reward = tf.get_default_session().run(
                 self.reward, feed_dict={self.act_t: acts, self.obs_t: obs}
             )
