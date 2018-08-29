@@ -408,32 +408,29 @@ class AtariAIRL(AIRL):
 
     @overrides
     def fit(self, paths, policy=None, batch_size=128, logger=None, lr=1e-3, itr=0, **kwargs):
-        if self.rescore_expert_trajs or itr == 0:
-            # eval expert log probs under current policy
+        if isinstance(self.expert_trajs[0], dict):
             self._insert_next_state(self.expert_trajs)
-            self.expert_cache = self.extract_paths(
-                self.expert_trajs, keys=(
+            expert_obs_base, expert_obs_next_base, expert_acts, expert_acts_next = \
+                self.extract_paths(self.expert_trajs, keys=(
                     'observations', 'observations_next',
                     'actions', 'actions_next'
-                )
-            )
-            # add a_logprobs
-            self.expert_cache += (
-                paths.sampler.get_a_logprobs(
-                    self.expert_cache[0], self.expert_cache[2]
-                ),
-            )
+                ))
+        else:
+            expert_obs_base, expert_obs_next_base, expert_acts, expert_acts_next, _ = \
+                self.expert_trajs
 
-        assert self.expert_cache is not None
-
+        expert_probs = paths.sampler.get_a_logprobs(
+            expert_obs_base, expert_acts
+        )
         obs, obs_next, acts, acts_next, path_probs = paths.extract_paths((
             'observations', 'observations_next', 'actions', 'actions_next', 'a_logprobs'
-        ))
-        expert_obs, expert_obs_next, expert_acts, expert_acts_next, expert_probs = self.expert_cache
+        ), drop_framestack=self.drop_framestack)
 
+        expert_obs = expert_obs_base
+        expert_obs_next = expert_obs_next_base
         if self.drop_framestack:
-            expert_obs = expert_obs[:,:,:, -1:]
-            expert_obs_next = expert_obs_next[:, :, :, -1:]
+            expert_obs = expert_obs_base[:,:,:, -1:]
+            expert_obs_next = expert_obs_next_base[:, :, :, -1:]
 
         # Train discriminator
         for it in TrainingIterator(self.max_itrs, heartbeat=5):
