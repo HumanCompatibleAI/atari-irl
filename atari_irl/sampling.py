@@ -198,9 +198,9 @@ class PPOSample:
     def get_path_key(self, key, pad_val=0.0, drop_framestack=False):
         if key == 'observations':
             if drop_framestack:
-                return self.obs
-            else:
                 return self.obs[:, :, :, :, -1:]
+            else:
+                return self.obs
         elif key == 'actions':
             return self.actions
         elif key == 'observations_next':
