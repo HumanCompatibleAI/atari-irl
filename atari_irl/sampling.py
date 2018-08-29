@@ -280,7 +280,8 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
             # needs to be a tuple for the batched call to work
             lambda obs: (self.get_probabilities_for_obs(obs),),
             self.model.train_model.X.shape[0].value,
-            (obs, )
+            (obs, ),
+            check_safety=False
         )[0]
         return np.log((probs * acts).sum(axis=1))
 

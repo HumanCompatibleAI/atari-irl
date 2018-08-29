@@ -119,7 +119,7 @@ def one_hot(x, dim):
     return ans
 
 
-def batched_call(fn, batch_size, args):
+def batched_call(fn, batch_size, args, check_safety=True):
     N = args[0].shape[0]
     for arg in args:
         assert arg.shape[0] == N
@@ -148,7 +148,8 @@ def batched_call(fn, batch_size, args):
             results_batch = [slice_result(r, subslice) for r in results_batch]
             args_batch = [slice_result(r, subslice) for r in args_batch]
         fn_results.append(results_batch)
-        arg0_batches.append(args_batch[0])
+        if check_safety:
+            arg0_batches.append(args_batch[0])
 
     # add data for all of the batches that cleanly fit inside the batch size
     for start in range(0, N - batch_size, batch_size):
@@ -166,7 +167,8 @@ def batched_call(fn, batch_size, args):
         )
 
     # integrity check
-    final_arg0 = np.vstack(arg0_batches)
+    if check_safety:
+        final_arg0 = np.vstack(arg0_batches)
 
     # reshape everything
     final_results = []
@@ -191,6 +193,7 @@ def batched_call(fn, batch_size, args):
             raise NotImplementedError
 
     # Integrity checks in case I wrecked this
-    assert len(final_arg0) == N
-    assert np.isclose(final_arg0, args[0]).all()
+    if check_safety:
+        assert len(final_arg0) == N
+        assert np.isclose(final_arg0, args[0]).all()
     return final_results
