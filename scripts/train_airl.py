@@ -38,7 +38,8 @@ def train_airl(args):
         reward_model_cfg={
             'expert_trajs': joblib.load(open(args.trajectories_file, 'rb')),
             'state_only': args.state_only,
-            'drop_framestack': args.drop_discriminator_framestack
+            'drop_framestack': args.drop_discriminator_framestack,
+            'only_show_scores': args.only_show_discriminator_scores
         },
         ablation=args.ablation
     )

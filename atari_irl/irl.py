@@ -276,6 +276,7 @@ class AtariAIRL(AIRL):
                  fusion=False,
                  name='airl',
                  drop_framestack=False,
+                 only_show_scores=False,
                  rescore_expert_trajs=True
                  ):
         super(AIRL, self).__init__()
@@ -295,7 +296,9 @@ class AtariAIRL(AIRL):
             max_itrs=max_itrs,
             fusion=fusion,
             name=name,
-            rescore_expert_trajs=rescore_expert_trajs
+            rescore_expert_trajs=rescore_expert_trajs,
+            drop_framestack=drop_framestack,
+            only_show_scores=only_show_scores
         )
 
         if fusion:
@@ -314,9 +317,10 @@ class AtariAIRL(AIRL):
         assert value_fn_arch is not None
         #self.set_demos(expert_trajs)
         self.expert_trajs = expert_trajs
-        self.state_only=state_only
-        self.max_itrs=max_itrs
-        self.drop_framestack=drop_framestack
+        self.state_only = state_only
+        self.max_itrs = max_itrs
+        self.drop_framestack = drop_framestack
+        self.only_show_scores = only_show_scores
         self.expert_cache = None
         self.rescore_expert_trajs = rescore_expert_trajs
         # build energy model
@@ -367,6 +371,8 @@ class AtariAIRL(AIRL):
 
             self.grad_reward = tf.gradients(self.reward, [self.obs_t, self.act_t])
 
+            self.modify_obs = self.get_ablation_modifiers()
+
     def change_kwargs(self, **kwargs):
         for key, value in kwargs.items():
             # All of these are used in graph construction, and so we can't
@@ -406,6 +412,16 @@ class AtariAIRL(AIRL):
                 print(f"Warning: different values for {key}")
         self.set_params(data['tf_params'])
 
+    def get_ablation_modifiers(self):
+        def process_obs(obs):
+            if self.drop_framestack:
+                obs = obs[:, :, :, -1:]
+            if self.only_show_scores:
+                obs = obs.copy()
+                obs[:, 10:, :, :] *= 0
+            return obs
+        return process_obs
+
     @overrides
     def fit(self, paths, policy=None, batch_size=256, logger=None, lr=1e-3, itr=0, **kwargs):
         if isinstance(self.expert_trajs[0], dict):
@@ -422,7 +438,7 @@ class AtariAIRL(AIRL):
         #expert_probs = paths.sampler.get_a_logprobs(
         obs, obs_next, acts, acts_next, path_probs = paths.extract_paths((
             'observations', 'observations_next', 'actions', 'actions_next', 'a_logprobs'
-        ), drop_framestack=self.drop_framestack)
+        ), obs_modifier=self.modify_obs)
 
         expert_obs = expert_obs_base
         expert_obs_next = expert_obs_next_base
@@ -442,12 +458,11 @@ class AtariAIRL(AIRL):
                     batch_size=batch_size
                 )
             expert_lprobs_batch = paths.sampler.get_a_logprobs(
-                expert_obs_batch, expert_act_batch
+                expert_obs_batch,
+                expert_act_batch
             )
-            
-            if self.drop_framestack:
-                expert_obs_batch = expert_obs_batch[:,:,:, -1:]
-                nexpert_obs_batch = nexpert_obs_batch[:, :, :, -1:]
+            expert_obs_batch = self.modify_obs(expert_obs_batch)
+            nexpert_obs_batch = self.modify_obs(nexpert_obs_batch)
 
             # Build feed dict
             labels = np.zeros((batch_size*2, 1))
@@ -495,7 +510,7 @@ class AtariAIRL(AIRL):
         if self.score_discrim:
             obs, obs_next, acts, path_probs = samples.extract_paths(
                 ('observations', 'observations_next', 'actions', 'a_logprobs'),
-                drop_framestack=self.drop_framestack
+                obs_modifier=self.modify_obs
             )
             path_probs = np.expand_dims(path_probs, axis=1)
             scores = tf.get_default_session().run(
@@ -511,7 +526,7 @@ class AtariAIRL(AIRL):
             score = score[:,0]
         else:
             obs, acts = samples.extract_paths(
-                ('observations', 'actions'), drop_framestack=self.drop_framestack
+                ('observations', 'actions'), obs_modifier=self.modify_obs
             )
             reward = tf.get_default_session().run(
                 self.reward, feed_dict={self.act_t: acts, self.obs_t: obs}
@@ -547,8 +562,9 @@ def reward_model_config(
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
         score_discrim=True,
-        max_itrs=100,
-        drop_framestack=False
+        max_itrs=10,
+        drop_framestack=False,
+        only_show_scores=False
 ):
     return dict(
         model=model,
@@ -559,7 +575,8 @@ def reward_model_config(
         expert_trajs=expert_trajs,
         score_discrim=score_discrim,
         max_itrs=max_itrs,
-        drop_framestack=drop_framestack
+        drop_framestack=drop_framestack,
+        only_show_scores=only_show_scores
     )
 
 

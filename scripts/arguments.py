@@ -91,6 +91,7 @@ def add_irl_args(parser):
     )
     add_bool_feature(parser, 'state_only', default=False)
     add_bool_feature(parser, 'drop_discriminator_framestack', default=False)
+    add_bool_feature(parser, 'only_show_discriminator_scores', default=False)
 
 
 def env_context_for_args(args):

@@ -212,20 +212,14 @@ class PPOSample:
 
         return Trajectories(buffer, self)
 
-    def get_path_key(self, key, pad_val=0.0, drop_framestack=False):
+    def get_path_key(self, key, pad_val=0.0):
         if key == 'observations':
-            if drop_framestack:
-                return self.obs[:, :, :, :, -1:]
-            else:
-                return self.obs
+            return self.obs
         elif key == 'actions':
             return self.actions
         elif key == 'observations_next':
             if self.obs_next is None:
-                if drop_framestack:
-                    obs = self.obs[:, :, :, :, -1:]
-                else:
-                    obs = self.obs
+                obs = self.obs
                 self.obs_next = np.r_[
                     obs[1:],
                     pad_val*np.expand_dims(np.ones_like(obs[0]), axis=0)
@@ -252,15 +246,21 @@ class PPOSample:
         else:
             assert False
 
-    def extract_paths(self, keys, drop_framestack=False):
+    def extract_paths(self, keys, obs_modifier=lambda obs: obs):
         data = [
-            ppo2.sf01(self.get_path_key(key, drop_framestack=drop_framestack))
+            ppo2.sf01(self.get_path_key(key))
             for key in keys
         ]
-        return [
-            d if 'actions' not in key else utils.one_hot(d.astype(np.int32), 6)
-            for d, key in zip(data, keys)
-        ]
+
+        def process_data(inpt):
+            key, value = inpt
+            if 'actions' in key:
+                return utils.one_hot(value.astype(np.int32), 6)
+            elif 'observations' in key:
+                return obs_modifier(value)
+            else:
+                return value
+        return map(process_data, zip(keys, data))
 
 
 class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
