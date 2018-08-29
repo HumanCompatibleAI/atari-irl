@@ -478,3 +478,43 @@ class FullTrajectorySampler(VectorizedSampler):
         return PPOBatch(
             *([data[:512] for data in samples_data[:-2]] + [None, None])
         )
+
+
+class PPOBatchBuffer(PPOSample):
+    def __init__(self, ppo_sample, n_batches):
+        self.n_batches = n_batches
+        self.cur_idx = 0
+
+        T = ppo_sample.obs.shape[0]
+        assert ppo_sample.rewards.shape[0] == T
+        assert ppo_sample.actions.shape[0] == T
+        assert ppo_sample.values.shape[0] == T
+        assert ppo_sample.dones.shape[0] == T
+        assert ppo_sample.neglogpacs.shape[0] == T
+
+        self.batch_T = T
+
+        def fix_shape(shape):
+            return (self.batch_T * self.n_batches, ) + shape[1:]
+
+        super().__init__(
+            np.zeros(fix_shape(ppo_sample.obs.shape)),
+            np.zeros(fix_shape(ppo_sample.rewards.shape)),
+            np.zeros(fix_shape(ppo_sample.actions.shape)),
+            np.zeros(fix_shape(ppo_sample.values.shape)),
+            np.zeros(fix_shape(ppo_sample.dones.shape)),
+            np.zeros(fix_shape(ppo_sample.neglogpacs.shape)),
+            None,
+            None,
+            ppo_sample.sampler
+        )
+
+    def add(self, sample):
+        if self.cur_idx >= self.n_batches:
+            self.cur_idx = 0
+
+        for key in ['obs', 'rewards', 'actions', 'values', 'dones', 'neglogpacs']:
+            s = slice(self.cur_idx, self.cur_idx + self.batch_T)
+            getattr(self, key)[s] = getattr(sample, key)
+
+        self.cur_idx += self.batch_T

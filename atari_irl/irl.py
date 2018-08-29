@@ -690,7 +690,7 @@ def rllab_wrap_venv(envs):
 def get_training_kwargs(
         *,
         venv,
-        ablation='normal', nsteps_sampler=2048, nsteps_model=128,
+        ablation='normal', nsteps_sampler=128, nsteps_model=128,
         reward_model_cfg={}, policy_cfg={}, training_cfg={}
 ):
     envs = rllab_wrap_venv(venv)
@@ -801,7 +801,7 @@ class IRLRunner(IRLTRPO):
         self.optimizer.update_opt(self.policy)
 
     @overrides
-    def get_itr_snapshot(self, itr, samples_data):
+    def get_itr_snapshot(self, itr):
         return dict(
             itr=itr,
             ablation=self.ablation,
@@ -848,6 +848,7 @@ class IRLRunner(IRLTRPO):
             logger.record_tabular('IRLLoss', mean_loss)
             self.__irl_params = self.irl_model.get_params()
 
+
         probs = self.irl_model.eval(samples, gamma=self.discount, itr=itr)
         probs_flat = np.concatenate(probs)  # trajectory length varies
 
@@ -855,12 +856,12 @@ class IRLRunner(IRLTRPO):
         logger.record_tabular('IRLRewardMax', np.max(probs_flat))
         logger.record_tabular('IRLRewardMin', np.min(probs_flat))
 
-        if self.irl_model_wt > 0.0:
-            samples.rewards += self.irl_model_wt * probs
+        #if self.irl_model_wt > 0.0:
+        #    samples.rewards += self.irl_model_wt * probs
 
         return samples
 
-    def train(self):
+    def _train_setup(self):
         sess = tf.get_default_session()
         sess.run(tf.local_variables_initializer())
         sess.run(tf.global_variables_initializer())
@@ -869,7 +870,37 @@ class IRLRunner(IRLTRPO):
         if self.init_irl_params is not None:
             self.irl_model.set_params(self.init_irl_params)
         self.start_worker()
-        start_time = time.time()
+        return time.time()
+
+    def _log_train_itr(self, itr, start_time, itr_start_time):
+        logger.record_tabular(
+            "PolicyBufferOriginalTaskRewardMean",
+            self.sampler.mean_reward
+        )
+        logger.record_tabular(
+            "PolicyBufferEpisodeLengthMean",
+            self.sampler.mean_length
+        )
+
+        if itr % 10 == 0:
+            logger.log("Saving snapshot...")
+            params = self.get_itr_snapshot(itr)
+            if self.store_paths:
+                raise NotImplementedError
+            logger.save_itr_params(itr, params)
+            logger.log(f"Saved in directory {logger.get_snapshot_dir()}")
+
+        logger.record_tabular('Time', time.time() - start_time)
+        logger.record_tabular('ItrTime', time.time() - itr_start_time)
+        logger.dump_tabular(with_prefix=False)
+        if self.plot:
+            self.update_plot()
+            if self.pause_for_plot:
+                input("Plotting evaluation run: Press Enter to "
+                      "continue...")
+
+    def train(self):
+        start_time = self._train_setup()
 
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
@@ -898,32 +929,61 @@ class IRLRunner(IRLTRPO):
                     # discriminator's job easy.
                     self.optimize_policy(itr, samples)
 
-                logger.record_tabular(
-                    "PolicyBufferOriginalTaskRewardMean",
-                    self.sampler.mean_reward
-                )
-                logger.record_tabular(
-                    "PolicyBufferEpisodeLengthMean",
-                    self.sampler.mean_length
+            self._log_train_itr(
+                itr,
+                start_time=start_time,
+                itr_start_time=itr_start_time
+            )
+
+    def buffered_sample_train_policy(self, buffer_batch_size, itr, ppo_itr, buffer):
+        for i in range(buffer_batch_size):
+            batch = self.obtain_samples(itr)
+
+            if buffer is None:
+                buffer = sampling.PPOBatchBuffer(batch, buffer_batch_size)
+
+            # overwrite the rewards with the IRL model
+            buffer.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
+            buffer.add(batch)
+
+            if not self.skip_policy_update:
+                logger.log("Optimizing policy...")
+                self.optimize_policy(ppo_itr, batch)
+            ppo_itr += 1
+
+        return buffer, ppo_itr
+
+    def buffered_train(self):
+        start_time = self._train_setup()
+
+        ppo_itr = 0
+        buffer = None
+        buffer_batch_size = 16
+
+        for itr in range(self.start_itr, self.n_itr):
+            itr_start_time = time.time()
+            with logger.prefix('itr #%d | ' % itr):
+                logger.record_tabular('Itr', itr)
+                logger.log("Obtaining samples...")
+                buffer, ppo_itr = self.buffered_sample_train_policy(
+                    buffer_batch_size, itr, ppo_itr, buffer
                 )
 
-                if itr % 10 == 0:
-                    logger.log("Saving snapshot...")
-                    params = self.get_itr_snapshot(itr, samples)  # , **kwargs)
-                    if self.store_paths:
-                        raise NotImplementedError
-                    logger.save_itr_params(itr, params)
-                    logger.log(f"Saved in directory {logger.get_snapshot_dir()}")
+                if not self.skip_discriminator:
+                    logger.log("Optimizing discriminator...")
+                    # The fact that we're not using the reward labels from here
+                    # means that the policy optimization is effectively getting
+                    # an off-by-one issue. I'm not sure that this would fix the
+                    # issues that we're seeing, but it's definitely different
+                    # from the original algorithm and so we should try fixing
+                    # it anyway.
+                    samples = self.compute_irl(buffer, itr=itr)
 
-                logger.record_tabular('Time', time.time() - start_time)
-                logger.record_tabular('ItrTime', time.time() - itr_start_time)
-                logger.dump_tabular(with_prefix=False)
-                if self.plot:
-                    self.update_plot()
-                    if self.pause_for_plot:
-                        input("Plotting evaluation run: Press Enter to "
-                              "continue...")
-        return
+            self._log_train_itr(
+                itr,
+                start_time=start_time,
+                itr_start_time=itr_start_time
+            )
 
 
 class IRLContext:
@@ -984,7 +1044,8 @@ def airl(
 
         with rllab_logdir(algo=algo, dirname=log_dir):
             print("Training!")
-            algo.train()
+            algo.buffered_train()
+            #algo.train()
             reward_params = irl_model.get_params()
             # Must pickle policy rather than returning it directly,
             # since parameters in policy will not survive across tf sessions.
