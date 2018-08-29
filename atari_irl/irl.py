@@ -419,26 +419,35 @@ class AtariAIRL(AIRL):
             expert_obs_base, expert_obs_next_base, expert_acts, expert_acts_next, _ = \
                 self.expert_trajs
 
-        expert_probs = paths.sampler.get_a_logprobs(
-            expert_obs_base, expert_acts
-        )
+        #expert_probs = paths.sampler.get_a_logprobs(
         obs, obs_next, acts, acts_next, path_probs = paths.extract_paths((
             'observations', 'observations_next', 'actions', 'actions_next', 'a_logprobs'
         ), drop_framestack=self.drop_framestack)
 
         expert_obs = expert_obs_base
         expert_obs_next = expert_obs_next_base
-        if self.drop_framestack:
-            expert_obs = expert_obs_base[:,:,:, -1:]
-            expert_obs_next = expert_obs_next_base[:, :, :, -1:]
 
         # Train discriminator
         for it in TrainingIterator(self.max_itrs, heartbeat=5):
             nobs_batch, obs_batch, nact_batch, act_batch, lprobs_batch = \
                 self.sample_batch(obs_next, obs, acts_next, acts, path_probs, batch_size=batch_size)
 
-            nexpert_obs_batch, expert_obs_batch, nexpert_act_batch, expert_act_batch, expert_lprobs_batch = \
-                self.sample_batch(expert_obs_next, expert_obs, expert_acts_next, expert_acts, expert_probs, batch_size=batch_size)
+            nexpert_obs_batch, expert_obs_batch, nexpert_act_batch, expert_act_batch = \
+                self.sample_batch(
+                    expert_obs_next,
+                    expert_obs,
+                    expert_acts_next,
+                    expert_acts,
+                    # expert_probs,
+                    batch_size=batch_size
+                )
+            expert_lprobs_batch = paths.sampler.get_a_logprobs(
+                expert_obs_batch, expert_act_batch
+            )
+            
+            if self.drop_framestack:
+                expert_obs_batch = expert_obs_batch[:,:,:, -1:]
+                nexpert_obs_batch = nexpert_obs_batch[:, :, :, -1:]
 
             # Build feed dict
             labels = np.zeros((batch_size*2, 1))
