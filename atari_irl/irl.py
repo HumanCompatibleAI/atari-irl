@@ -62,7 +62,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             init_location=init_location
         )
 
-        ent_coef = 0.0
+        ent_coef = 0.01
         vf_coef = 0.5
         max_grad_norm = 0.5
         model_args = dict(
@@ -561,7 +561,7 @@ def reward_model_config(
         state_only=False,
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
-        score_discrim=True,
+        score_discrim=False,
         max_itrs=10,
         drop_framestack=False,
         only_show_scores=False
@@ -943,7 +943,8 @@ class IRLRunner(IRLTRPO):
                 buffer = sampling.PPOBatchBuffer(batch, buffer_batch_size)
 
             # overwrite the rewards with the IRL model
-            buffer.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
+            if self.irl_model_wt > 0.0:
+                batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
             buffer.add(batch)
 
             if not self.skip_policy_update:
@@ -958,7 +959,7 @@ class IRLRunner(IRLTRPO):
 
         ppo_itr = 0
         buffer = None
-        buffer_batch_size = 16
+        buffer_batch_size = 8
 
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
@@ -977,7 +978,7 @@ class IRLRunner(IRLTRPO):
                     # issues that we're seeing, but it's definitely different
                     # from the original algorithm and so we should try fixing
                     # it anyway.
-                    samples = self.compute_irl(buffer, itr=itr)
+                    self.compute_irl(buffer, itr=itr)
 
             self._log_train_itr(
                 itr,
