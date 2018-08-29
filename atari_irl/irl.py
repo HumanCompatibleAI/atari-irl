@@ -312,7 +312,8 @@ class AtariAIRL(AIRL):
         self.score_discrim = score_discrim
         self.gamma = discount
         assert value_fn_arch is not None
-        self.set_demos(expert_trajs)
+        #self.set_demos(expert_trajs)
+        self.expert_trajs = expert_trajs
         self.state_only=state_only
         self.max_itrs=max_itrs
         self.drop_framestack=drop_framestack
@@ -356,6 +357,10 @@ class AtariAIRL(AIRL):
 
             log_pq = tf.reduce_logsumexp([log_p_tau, log_q_tau], axis=0)
             self.discrim_output = tf.exp(log_p_tau-log_pq)
+            self.accuracy, self.update_accuracy = tf.metrics.accuracy(
+                labels=self.labels,
+                predictions=self.discrim_output > 0.5
+            )
             self.loss = -tf.reduce_mean(self.labels*(log_p_tau-log_pq) + (1-self.labels)*(log_q_tau-log_pq))
             self.step = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
             self._make_param_ops(_vs)
@@ -457,15 +462,22 @@ class AtariAIRL(AIRL):
                 self.lr: lr
             }
 
-            loss, _ = tf.get_default_session().run([self.loss, self.step], feed_dict=feed_dict)
+            loss, _, acc = tf.get_default_session().run(
+                [self.loss, self.step, self.update_accuracy],
+                feed_dict=feed_dict
+            )
             it.record('loss', loss)
+            it.record('accuracy', acc)
             if it.heartbeat:
                 print(it.itr_message())
                 mean_loss = it.pop_mean('loss')
                 print('\tLoss:%f' % mean_loss)
+                mean_acc = it.pop_mean('accuracy')
+                print('\tAccuracy:%f' % mean_acc)
 
         if logger:
             logger.record_tabular('GCLDiscrimLoss', mean_loss)
+            logger.record_tabular('GCLDiscrimAccuracy', mean_acc)
 
         return mean_loss
 
@@ -825,6 +837,7 @@ class IRLRunner(IRLTRPO):
 
     def train(self):
         sess = tf.get_default_session()
+        sess.run(tf.local_variables_initializer())
         sess.run(tf.global_variables_initializer())
         if self.init_pol_params is not None:
             self.policy.restore_param_values(self.init_pol_params)
