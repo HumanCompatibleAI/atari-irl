@@ -239,6 +239,15 @@ class PPOSample:
                 ]
             return self.actions_next
         elif key == 'a_logprobs':
+            """
+            assert np.isclose(
+                ppo2.sf01(-1 * self.neglogpacs),
+                self.sampler.get_a_logprobs(
+                    ppo2.sf01(self.obs),
+                    utils.one_hot(ppo2.sf01(self.actions).astype(np.int32), 6)
+                )
+            ).all()
+            """
             return -1 * self.neglogpacs
         else:
             assert False
