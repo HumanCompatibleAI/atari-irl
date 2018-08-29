@@ -1,5 +1,5 @@
 from baselines.ppo2.ppo2 import Model, constfn
-from .sampling import PPOBatch
+from .sampling import PPOBatch, PPOSample
 
 import numpy as np
 
@@ -103,7 +103,7 @@ class PPOOptimizer:
         assert hasattr(policy, 'model')
         assert isinstance(policy.model, Model)
 
-    def optimize_policy(self, itr: int, ppo_batch: PPOBatch):
+    def optimize_policy(self, itr: int, samples: PPOSample):
         # compute our learning rate and clip ranges
         assert self.nbatch % self.batching_config.nminibatches == 0
         nbatch_train = self.nbatch // self.batching_config.nminibatches
@@ -112,14 +112,15 @@ class PPOOptimizer:
         lrnow = self.lr(frac)
         cliprangenow = self.cliprange(frac)
 
-        # Run the training steps for PPO
-        mblossvals = ppo_train_steps(
-            model=self.policy.model,
-            run_info=ppo_batch,
-            batching_config=self.batching_config,
-            lrnow=lrnow,
-            cliprangenow=cliprangenow,
-            nbatch_train=nbatch_train
-        )
+        for batch in samples.to_ppo_batches(self.batching_config.nbatch):
+            # Run the training steps for PPO
+            mblossvals = ppo_train_steps(
+                model=self.policy.model,
+                run_info=batch,
+                batching_config=self.batching_config,
+                lrnow=lrnow,
+                cliprangenow=cliprangenow,
+                nbatch_train=nbatch_train
+            )
 
         return np.mean(mblossvals, axis=0)

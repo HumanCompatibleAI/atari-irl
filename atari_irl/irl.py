@@ -664,7 +664,7 @@ def rllab_wrap_venv(envs):
 def get_training_kwargs(
         *,
         venv,
-        ablation='normal', nsteps=128,
+        ablation='normal', nsteps_sampler=2048, nsteps_model=128,
         reward_model_cfg={}, policy_cfg={}, training_cfg={}
 ):
     envs = rllab_wrap_venv(venv)
@@ -702,9 +702,11 @@ def get_training_kwargs(
 
     baselines_venv = baselines_venv
 
+    assert nsteps_sampler % nsteps_model == 0
+
     batching_config = training.make_batching_config(
         nenvs=baselines_venv.num_envs,
-        nsteps=nsteps,
+        nsteps=nsteps_model,
         noptepochs=4,
         nminibatches=4
     )
@@ -722,7 +724,7 @@ def get_training_kwargs(
         ablation=ablation,
         sampler_args=dict(
             baselines_venv=baselines_venv,
-            nsteps=nsteps,
+            nsteps=nsteps_sampler,
             gamma=0.99,
             lam=0.95
         ),
@@ -791,8 +793,8 @@ class IRLRunner(IRLTRPO):
         return super(IRLRunner, self).obtain_samples(itr)
 
     @overrides
-    def optimize_policy(self, itr, samples_data):
-        self.optimizer.optimize_policy(itr, samples_data)
+    def optimize_policy(self, itr, samples):
+        self.optimizer.optimize_policy(itr, samples)
 
     @overrides
     def compute_irl(self, samples, itr=0):
@@ -861,9 +863,6 @@ class IRLRunner(IRLTRPO):
                     # it anyway.
                     samples = self.compute_irl(samples, itr=itr)
 
-                logger.log("Processing samples...")
-                samples_data = self.process_samples(itr, samples)
-
                 if not self.skip_policy_update:
                     logger.log("Optimizing policy...")
                     # Another issue is that the expert trajectories start from
@@ -871,7 +870,7 @@ class IRLRunner(IRLTRPO):
                     # the resets happen. This means that the difference between
                     # environment seeds might be enough to make the
                     # discriminator's job easy.
-                    self.optimize_policy(itr, samples_data)
+                    self.optimize_policy(itr, samples)
 
                 logger.record_tabular(
                     "PolicyBufferOriginalTaskRewardMean",
@@ -884,9 +883,9 @@ class IRLRunner(IRLTRPO):
 
                 if itr % 10 == 0:
                     logger.log("Saving snapshot...")
-                    params = self.get_itr_snapshot(itr, samples_data)  # , **kwargs)
+                    params = self.get_itr_snapshot(itr, samples)  # , **kwargs)
                     if self.store_paths:
-                        params["paths"] = samples_data["paths"]
+                        raise NotImplementedError
                     logger.save_itr_params(itr, params)
                     logger.log(f"Saved in directory {logger.get_snapshot_dir()}")
 

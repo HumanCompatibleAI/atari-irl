@@ -132,10 +132,27 @@ class PPOSample:
 
         self.probabilities = self._get_sample_probabilities()
 
-    def to_ppo_batch(self) -> PPOBatch:
-        return self.sampler.process_to_ppo_batch(
+    def to_ppo_batches(self, batch_size):
+        all_data = self.sampler.process_to_ppo_batch(
             self, gamma=self.sampler.gamma, lam=self.sampler.lam
         )
+        if all_data.states is not None:
+            raise NotImplemented
+
+        N = all_data.obs.shape[0]
+        assert N % batch_size == 0
+        for start in range(0, N, batch_size):
+            end = start + batch_size
+            yield PPOBatch(
+                all_data.obs[start:end],
+                all_data.returns[start:end],
+                all_data.masks[start:end],
+                all_data.actions[start:end],
+                all_data.values[start:end],
+                all_data.neglogpacs[start:end],
+                None, None
+            )
+
 
     def _ravel_time_env_batch_to_train_batch(self, inpt):
         assert inpt.shape[0] == self.sample_batch_timesteps
@@ -321,6 +338,7 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
 
             mb_rewards.append(rewards)
 
+        self._epinfobuf.extend(epinfos)
         return PPOSample(
             mb_obs, mb_rewards, mb_actions, mb_values, mb_dones,
             mb_neglogpacs, mb_states, epinfos, self
