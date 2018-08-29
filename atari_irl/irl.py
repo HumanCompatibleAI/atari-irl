@@ -407,7 +407,7 @@ class AtariAIRL(AIRL):
         self.set_params(data['tf_params'])
 
     @overrides
-    def fit(self, paths, policy=None, batch_size=128, logger=None, lr=1e-3, itr=0, **kwargs):
+    def fit(self, paths, policy=None, batch_size=256, logger=None, lr=1e-3, itr=0, **kwargs):
         if isinstance(self.expert_trajs[0], dict):
             self._insert_next_state(self.expert_trajs)
             expert_obs_base, expert_obs_next_base, expert_acts, expert_acts_next = \
