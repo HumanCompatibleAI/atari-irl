@@ -862,7 +862,7 @@ class IRLRunner(IRLTRPO):
                     # issues that we're seeing, but it's definitely different
                     # from the original algorithm and so we should try fixing
                     # it anyway.
-                    paths = self.compute_irl(samples, itr=itr)
+                    samples = self.compute_irl(samples, itr=itr)
 
                 logger.log("Processing samples...")
                 samples_data = self.process_samples(itr, samples)
