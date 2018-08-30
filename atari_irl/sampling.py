@@ -522,7 +522,7 @@ class PPOBatchBuffer(PPOSample):
         )
 
     def add(self, sample):
-        if self.cur_idx >= self.n_batches:
+        if self.cur_idx >= self.n_batches * self.batch_T:
             self.cur_idx = 0
 
         for key in ['obs', 'rewards', 'actions', 'values', 'dones', 'neglogpacs']:
@@ -538,7 +538,7 @@ class PPOBatchBuffer(PPOSample):
         #if all_data.states is not None:
         #    raise NotImplemented
             
-        for start in range(0, N, batch_size):
+        for start in range(0, self.batch_T * self.n_batches, batch_size):
             end = start + batch_size
             s = slice(start, end)
             
