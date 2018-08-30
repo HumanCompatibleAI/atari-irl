@@ -562,7 +562,7 @@ def reward_model_config(
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
         score_discrim=False,
-        max_itrs=10,
+        max_itrs=100,
         drop_framestack=False,
         only_show_scores=False
 ):
@@ -849,12 +849,12 @@ class IRLRunner(IRLTRPO):
             self.__irl_params = self.irl_model.get_params()
 
 
-        probs = self.irl_model.eval(samples, gamma=self.discount, itr=itr)
-        probs_flat = np.concatenate(probs)  # trajectory length varies
+        #probs = self.irl_model.eval(samples, gamma=self.discount, itr=itr)
+        #probs_flat = np.concatenate(probs)  # trajectory length varies
 
-        logger.record_tabular('IRLRewardMean', np.mean(probs_flat))
-        logger.record_tabular('IRLRewardMax', np.max(probs_flat))
-        logger.record_tabular('IRLRewardMin', np.min(probs_flat))
+        #logger.record_tabular('IRLRewardMean', np.mean(probs_flat))
+        #logger.record_tabular('IRLRewardMax', np.max(probs_flat))
+        #logger.record_tabular('IRLRewardMin', np.min(probs_flat))
 
         #if self.irl_model_wt > 0.0:
         #    samples.rewards += self.irl_model_wt * probs
@@ -882,7 +882,7 @@ class IRLRunner(IRLTRPO):
             self.sampler.mean_length
         )
 
-        if itr % 10 == 0:
+        if itr % 10 == 0 and itr != 0:
             logger.log("Saving snapshot...")
             params = self.get_itr_snapshot(itr)
             if self.store_paths:
@@ -937,19 +937,24 @@ class IRLRunner(IRLTRPO):
 
     def buffered_sample_train_policy(self, buffer_batch_size, itr, ppo_itr, buffer):
         for i in range(buffer_batch_size):
-            batch = self.obtain_samples(itr)
+            batch = self.obtain_samples(ppo_itr)
 
+            # Create a buffer if we don't have one
             if buffer is None:
                 buffer = sampling.PPOBatchBuffer(batch, buffer_batch_size)
 
             # overwrite the rewards with the IRL model
-            if self.irl_model_wt > 0.0:
+            if self.irl_model_wt > 0.0 and not self.skip_discriminator:
+                #logger.log("Overwriting batch rewards...")
+                assert np.isclose(np.sum(batch.rewards), 0)
                 batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
+            
             buffer.add(batch)
 
-            if not self.skip_policy_update:
+            if not self.skip_policy_update and itr > 0:
                 logger.log("Optimizing policy...")
                 self.optimize_policy(ppo_itr, batch)
+                
             ppo_itr += 1
 
         return buffer, ppo_itr
@@ -959,7 +964,7 @@ class IRLRunner(IRLTRPO):
 
         ppo_itr = 0
         buffer = None
-        buffer_batch_size = 8
+        buffer_batch_size = 16
 
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
