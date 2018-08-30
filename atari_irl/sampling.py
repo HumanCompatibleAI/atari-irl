@@ -133,6 +133,18 @@ class PPOSample:
         self.probabilities = self._get_sample_probabilities()
 
     def to_ppo_batches(self, batch_size):
+        #
+        #
+        #
+        #
+        # I'm guessing that this is where things go wrong in buffered sampling
+        # -- if we reshape and then loop then we're doing all the updates for the
+        # different environments in order, and don't learn to generalize between them
+        # this is why we can get to about zero, but not further
+        #
+        #
+        #
+        #
         all_data = self.sampler.process_to_ppo_batch(
             self, gamma=self.sampler.gamma, lam=self.sampler.lam
         )
@@ -244,7 +256,7 @@ class PPOSample:
             """
             return -1 * self.neglogpacs
         else:
-            assert False
+            raise NotImplementedError
 
     def extract_paths(self, keys, obs_modifier=lambda obs: obs):
         data = [
@@ -518,3 +530,42 @@ class PPOBatchBuffer(PPOSample):
             getattr(self, key)[s] = getattr(sample, key)
 
         self.cur_idx += self.batch_T
+        
+    def to_ppo_batches(self, batch_size):
+        #all_data = self.sampler.process_to_ppo_batch(
+        #    self, gamma=self.sampler.gamma, lam=self.sampler.lam
+        #)
+        #if all_data.states is not None:
+        #    raise NotImplemented
+            
+        for start in range(0, N, batch_size):
+            end = start + batch_size
+            s = slice(start, end)
+            
+            yield self.sampler._process_ppo_samples(
+                obs=self.obs[s],
+                rewards=self.rewards[s],
+                actions=self.actions[s],
+                values=self.values[s],
+                dones=self.dones[s],
+                neglogpacs=self.neglogpacs[s],
+                states=None, epinfos=None,
+                gamma=self.sampler.gamma,
+                lam=self.sampler.lam
+            ) 
+            
+        """
+        N = all_data.obs.shape[0]
+        assert N % batch_size == 0
+        for start in range(0, N, batch_size):
+            end = start + batch_size
+            yield PPOBatch(
+                adata.obs[start:end],
+                all_data.returns[start:end],
+                all_data.masks[start:end],
+                all_data.actions[start:end],
+                all_data.values[start:end],
+                all_data.neglogpacs[start:end],
+                None, None
+            )
+        """
