@@ -562,7 +562,7 @@ def reward_model_config(
         state_only=False,
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
-        score_discrim=False,
+        score_discrim=True,
         max_itrs=100,
         drop_framestack=False,
         only_show_scores=False
@@ -965,7 +965,7 @@ class IRLRunner(IRLTRPO):
 
         ppo_itr = 0
         buffer = None
-        buffer_batch_size = 16
+        buffer_batch_size = 32
 
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
