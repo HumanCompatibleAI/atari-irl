@@ -827,9 +827,6 @@ class IRLRunner(IRLTRPO):
     def compute_irl(self, samples, itr=0):
         if self.no_reward:
             logger.record_tabular(
-                'EnvironmentBatchAverageReturn', np.mean(samples.rewards)
-            )
-            logger.record_tabular(
                 'OriginalTaskAverageReturn', samples.sampler.mean_reward
             )
             samples.rewards *= 0
@@ -949,6 +946,7 @@ class IRLRunner(IRLTRPO):
                 #logger.log("Overwriting batch rewards...")
                 assert np.isclose(np.sum(batch.rewards), 0)
                 batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
+                logger.log(f"GCL Score Average: {np.mean(batch.rewards)}")
             
             buffer.add(batch)
 
