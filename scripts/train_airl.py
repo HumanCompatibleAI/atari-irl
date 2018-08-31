@@ -5,6 +5,9 @@ from baselines import logger
 import tensorflow as tf
 import pickle
 import joblib
+from baselines.ppo2.policies import CnnPolicy, MlpPolicy
+from atari_irl.irl import cnn_net
+from airl.models.architectures import relu_net
 
 
 def train_airl(args):
@@ -33,13 +36,16 @@ def train_airl(args):
             'one_hot_code': args.one_hot_code
         },
         policy_cfg={
-            'init_location': None if args.init_location == 'none' else args.init_location
+            'init_location': None if args.init_location == 'none' else args.init_location,
+            'policy_model': CnnPolicy if args.policy_type == 'cnn' else MlpPolicy
         },
         reward_model_cfg={
             'expert_trajs': joblib.load(open(args.trajectories_file, 'rb')),
             'state_only': args.state_only,
             'drop_framestack': args.drop_discriminator_framestack,
-            'only_show_scores': args.only_show_discriminator_scores
+            'only_show_scores': args.only_show_discriminator_scores,
+            'reward_arch': cnn_net if args.policy_type == 'cnn' else relu_net,
+            'value_fn_arch': cnn_net if args.policy_type == 'cnn' else relu_net
         },
         ablation=args.ablation
     )
