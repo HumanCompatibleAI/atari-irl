@@ -418,6 +418,7 @@ class AtariAIRL(AIRL):
                 obs = obs[:, :, :, -1:]
             if self.only_show_scores:
                 obs = obs.copy()
+                obs[:, :, :42, :] *= 0
                 obs[:, 10:, :, :] *= 0
             return obs
         return process_obs
