@@ -372,6 +372,7 @@ class AtariAIRL(AIRL):
             self.grad_reward = tf.gradients(self.reward, [self.obs_t, self.act_t])
 
             self.modify_obs = self.get_ablation_modifiers()
+            self.mean_score = 0
 
     def change_kwargs(self, **kwargs):
         for key, value in kwargs.items():
@@ -484,23 +485,28 @@ class AtariAIRL(AIRL):
                 self.lr: lr
             }
 
-            loss, _, acc = tf.get_default_session().run(
-                [self.loss, self.step, self.update_accuracy],
+            loss, _, acc, scores = tf.get_default_session().run(
+                [self.loss, self.step, self.update_accuracy, self.discrim_output],
                 feed_dict=feed_dict
             )
+            scores = np.log(scores) - np.log(1-scores)
             it.record('loss', loss)
             it.record('accuracy', acc)
+            # we only want the average score for the non-expert demos
+            it.record('avg_score', np.mean(scores[:batch_size]))
             if it.heartbeat:
                 print(it.itr_message())
                 mean_loss = it.pop_mean('loss')
                 print('\tLoss:%f' % mean_loss)
                 mean_acc = it.pop_mean('accuracy')
                 print('\tAccuracy:%f' % mean_acc)
+                mean_score = it.pop_mean('avg_score')
 
         if logger:
             logger.record_tabular('GCLDiscrimLoss', mean_loss)
             logger.record_tabular('GCLDiscrimAccuracy', mean_acc)
-
+            logger.record_tabular('GCLMeanScore', mean_score)
+        self.mean_score = mean_score
         return mean_loss
 
     @overrides
@@ -524,7 +530,7 @@ class AtariAIRL(AIRL):
                 }
             )
             score = np.log(scores) - np.log(1-scores)
-            score = score[:,0]
+            score = score[:,0] - min(self.mean_score, 0)
         else:
             obs, acts = samples.extract_paths(
                 ('observations', 'actions'), obs_modifier=self.modify_obs
