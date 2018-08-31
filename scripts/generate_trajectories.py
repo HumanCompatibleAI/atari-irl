@@ -23,15 +23,19 @@ def generate_trajectories(args):
                 model = policy.model
                 envs = policy.envs
             elif args.expert_type == 'irl':
-                irl_policy = irl.make_irl_policy(
-                    irl.policy_config(
-                        init_location=args.expert_path
-                    ),
-                    envs=irl.rllab_wrap_venv(context.environments),
-                    baseline_wrappers=[]
+                _, policy_cfg, _, _ = irl.get_training_kwargs(
+                    venv=context.environments,
+                    policy_cfg=dict(init_location=args.expert_path, name='other_policy'),
+                    reward_model_cfg=dict(expert_trajs=None)
                 )
-                model = irl_policy.learner.policy.model
-                envs = irl_policy.learner.runner.env
+                policy_cfg['name'] = 'policy'
+                irl_policy = irl.make_irl_policy(
+                    policy_cfg,
+                    wrapped_venv=irl.rllab_wrap_venv(context.environments),
+                    baselines_venv=context.environments
+                )
+                model = irl_policy.model
+                envs = context.environments
             else:
                 raise NotImplementedError
 

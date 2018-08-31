@@ -615,6 +615,8 @@ def make_irl_policy(policy_cfg, *, wrapped_venv, baselines_venv):
         observation_space=baselines_venv.observation_space,
         **policy_cfg
     )
+    # Put this back in so we don't get sad if we reuse the config
+    policy_cfg['policy'] = policy_fn
 
     return policy
 
