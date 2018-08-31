@@ -881,7 +881,7 @@ class IRLRunner(IRLTRPO):
             self.sampler.mean_length
         )
 
-        if itr % 10 == 0 and itr != 0:
+        if itr % 3 == 0 and itr != 0:
             logger.log("Saving snapshot...")
             params = self.get_itr_snapshot(itr)
             if self.store_paths:
@@ -938,20 +938,21 @@ class IRLRunner(IRLTRPO):
         for i in range(buffer_batch_size):
             batch = self.obtain_samples(ppo_itr)
 
-            # Create a buffer if we don't have one
-            if buffer is None:
-                buffer = sampling.PPOBatchBuffer(batch, buffer_batch_size)
+            if not self.skip_discriminator:
+                # Create a buffer if we don't have one
+                if buffer is None:
+                    buffer = sampling.PPOBatchBuffer(batch, buffer_batch_size)
 
-            # overwrite the rewards with the IRL model
-            if self.irl_model_wt > 0.0 and not self.skip_discriminator:
-                #logger.log("Overwriting batch rewards...")
-                assert np.isclose(np.sum(batch.rewards), 0)
-                batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
-                logger.log(f"GCL Score Average: {np.mean(batch.rewards)}")
-            
-            buffer.add(batch)
+                # overwrite the rewards with the IRL model
+                if self.irl_model_wt > 0.0:
+                    #logger.log("Overwriting batch rewards...")
+                    assert np.isclose(np.sum(batch.rewards), 0)
+                    batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
+                    logger.log(f"GCL Score Average: {np.mean(batch.rewards)}")
 
-            if not self.skip_policy_update and itr > 0:
+                buffer.add(batch)
+
+            if not self.skip_policy_update and (itr > 0 or self.skip_discriminator):
                 logger.log("Optimizing policy...")
                 self.optimize_policy(ppo_itr, batch)
                 
