@@ -1,14 +1,18 @@
-from atari_irl import utils, policies, environments, irl
+from atari_irl import utils, policies, environments, irl, training, sampling
 import pickle
 from arguments import add_atari_args, add_trajectory_args, add_expert_args, tf_context_for_args, env_context_for_args
 import argparse
-
+import tensorflow as tf
+import joblib
+from baselines.ppo2.policies import CnnPolicy, MlpPolicy
+from atari_irl.irl import cnn_net
+from airl.models.architectures import relu_net
 
 def generate_trajectories(args):
     # environments are not one hot coded, so we don't wrap this
     env_modifiers = environments.env_mapping[args.env]
-    if args.expert_type == 'irl':
-        env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
+    #if args.expert_type == 'irl':
+    #    env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
 
     utils.logger.configure()
     with utils.TfContext(ncpu=args.n_cpu):
@@ -23,17 +27,28 @@ def generate_trajectories(args):
                 model = policy.model
                 envs = policy.envs
             elif args.expert_type == 'irl':
-                _, policy_cfg, _, _ = irl.get_training_kwargs(
-                    venv=context.environments,
-                    policy_cfg=dict(init_location=args.expert_path, name='other_policy'),
-                    reward_model_cfg=dict(expert_trajs=None)
+                policy_cfg = irl.policy_config(
+                    init_location=args.expert_path
                 )
-                policy_cfg['name'] = 'policy'
+
+                policy_cfg['batching_config'] = training.make_batching_config(
+                    nenvs=args.num_envs,
+                    nsteps=128,
+                    noptepochs=4,
+                    nminibatches=4
+                )
                 irl_policy = irl.make_irl_policy(
                     policy_cfg,
                     wrapped_venv=irl.rllab_wrap_venv(context.environments),
                     baselines_venv=context.environments
                 )
+                sess = tf.get_default_session()
+                sess.run(tf.local_variables_initializer())
+                sess.run(tf.global_variables_initializer())
+                irl_policy.restore_from_snapshot(
+                    joblib.load(open(args.expert_path, 'rb'))['policy_params']
+                )
+
                 model = irl_policy.model
                 envs = context.environments
             else:
