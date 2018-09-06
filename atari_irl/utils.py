@@ -21,9 +21,10 @@ import tensorflow as tf
 import numpy as np
 
 from baselines import bench, logger
-from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common import set_global_seeds
+
+from atari_irl import environments
 
 import gym
 import csv
@@ -197,3 +198,36 @@ def batched_call(fn, batch_size, args, check_safety=True):
         assert len(final_arg0) == N
         assert np.isclose(final_arg0, args[0]).all()
     return final_results
+
+
+class TfEnvContext:
+    def __init__(self, tf_cfg, env_config):
+        self.tf_cfg = tf_cfg
+        self.env_config = env_config
+        self.seed = env_config['seed']
+
+        env_modifiers = environments.env_mapping[env_config['env_name']]
+        one_hot_code = env_config.pop('one_hot_code')
+        if one_hot_code:
+            env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
+        self.env_config.update(env_modifiers)
+
+    def __enter__(self):
+        self.env_context = EnvironmentContext(**self.env_config)
+        self.env_context.__enter__()
+        self.train_graph = tf.Graph()
+        self.tg_context = self.train_graph.as_default()
+        self.tg_context.__enter__()
+        self.sess = tf.Session(config=self.tf_cfg)
+        # from tensorflow.python import debug as tf_debug
+        # sess = tf_debug.LocalCLIDebugWrapperSession(sess , ui_type='readline')
+        self.sess_context = self.sess.as_default()
+        self.sess_context.__enter__()
+        tf.set_random_seed(self.seed)
+
+        return self
+
+    def __exit__(self, *args):
+        self.sess_context.__exit__(*args)
+        self.tg_context.__exit__(*args)
+        self.env_context.__exit__(*args)

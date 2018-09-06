@@ -1,4 +1,4 @@
-from atari_irl import sampling, irl
+from atari_irl import sampling, irl, utils
 from arguments import add_atari_args, add_trajectory_args, add_irl_args, env_context_for_args
 import argparse
 from baselines import logger
@@ -26,7 +26,7 @@ def train_airl(args):
          'seed': args.seed,
          'one_hot_code': args.one_hot_code
      }
-    with irl.IRLContext(tf_cfg, env_config) as context:
+    with utils.TfEnvContext(tf_cfg, env_config) as context:
         ts = joblib.load(open(args.trajectories_file, 'rb'))
         training_kwargs, _, _, _ = irl.get_training_kwargs(
             venv=context.env_context.environments,

@@ -18,16 +18,15 @@ from airl.utils.log_utils import rllab_logdir
 from airl.models.fusion_manager import RamFusionDistr
 from airl.utils import TrainingIterator
 
-from baselines.ppo2.policies import CnnPolicy, nature_cnn, fc
+from baselines.ppo2.policies import CnnPolicy
 from baselines.a2c.utils import conv, fc, conv_to_fc
 
-from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecIRLRewardEnv, VecOneHotEncodingEnv
-from .utils import one_hot
-from . import sampling, training, utils, environments, optimizers, policies
+from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecOneHotEncodingEnv
+from .utils import one_hot, TfEnvContext
+from . import sampling, training, utils, optimizers, policies
 
 from sandbox.rocky.tf.misc import tensor_utils
 
-import os
 import joblib
 import time
 from collections import defaultdict, namedtuple
@@ -1001,39 +1000,6 @@ class IRLRunner(IRLTRPO):
             )
 
 
-class IRLContext:
-    def __init__(self, tf_cfg, env_config):
-        self.tf_cfg = tf_cfg
-        self.env_config = env_config
-        self.seed = env_config['seed']
-
-        env_modifiers = environments.env_mapping[env_config['env_name']]
-        one_hot_code = env_config.pop('one_hot_code')
-        if one_hot_code:
-            env_modifiers = environments.one_hot_wrap_modifiers(env_modifiers)
-        self.env_config.update(env_modifiers)
-
-    def __enter__(self):
-        self.env_context = utils.EnvironmentContext(**self.env_config)
-        self.env_context.__enter__()
-        self.train_graph = tf.Graph()
-        self.tg_context = self.train_graph.as_default()
-        self.tg_context.__enter__()
-        self.sess = tf.Session(config=self.tf_cfg)
-        # from tensorflow.python import debug as tf_debug
-        # sess = tf_debug.LocalCLIDebugWrapperSession(sess , ui_type='readline')
-        self.sess_context = self.sess.as_default()
-        self.sess_context.__enter__()
-        tf.set_random_seed(self.seed)
-
-        return self
-
-    def __exit__(self, *args):
-        self.sess_context.__exit__(*args)
-        self.tg_context.__exit__(*args)
-        self.env_context.__exit__(*args)
-
-
 # Heavily based on implementation in https://github.com/HumanCompatibleAI/population-irl/blob/master/pirl/irl/airl.py
 def airl(
         log_dir,
@@ -1041,7 +1007,7 @@ def airl(
         tf_cfg, env_config, reward_model_cfg={}, policy_cfg={}, training_cfg={},
         ablation='normal'
 ):
-    with IRLContext(tf_cfg, env_config) as context:
+    with TfEnvContext(tf_cfg, env_config) as context:
         training_kwargs, policy_cfg, reward_model_cfg, training_cfg = get_training_kwargs(
             venv=context.env_context.environments,
             reward_model_cfg=reward_model_cfg,
@@ -1060,10 +1026,9 @@ def airl(
         with rllab_logdir(algo=algo, dirname=log_dir):
             print("Training!")
             algo.buffered_train()
-            #algo.train()
+            # need to return these explicitly because they don't survive
+            # across tensorflow sessions
             reward_params = irl_model.get_params()
-            # Must pickle policy rather than returning it directly,
-            # since parameters in policy will not survive across tf sessions.
             policy_params = policy.tensor_values()
 
     policy = policy_cfg, policy_params
