@@ -1,7 +1,6 @@
+from atari_irl import utils
 import tensorflow as tf
-import joblib
 import numpy as np
-from baselines.ppo2.policies import nature_cnn
 from baselines.a2c.utils import conv, fc, conv_to_fc
 
 
@@ -47,7 +46,7 @@ class VariationalAutoEncoder:
     def _process_obs_tensor(obs):
         return tf.cast(obs, tf.float32)
 
-    def __init__(self, obs_shape, d_classes, d_embedding, obs_dtype=tf.int32, **conv_kwargs):
+    def __init__(self, *, obs_shape, d_classes, d_embedding, obs_dtype=tf.int32, **conv_kwargs):
         self.obs_dtype = obs_dtype
         self.obs_shape = obs_shape
         self.d_classes = d_classes
@@ -123,8 +122,10 @@ class VariationalAutoEncoder:
             self.step = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
             self.optimization_scope = _os
 
-    def train_step(self, *, lr, obs, noise):
+    def train_step(self, *, lr, obs, noise=None):
         self._check_obs(obs)
+        if noise is None:
+            noise = np.zeros((obs.shape[0], self.d_embedding))
         loss, _ = tf.get_default_session().run(
             [self.loss, self.step], feed_dict={
                 self.lr: lr,
@@ -146,3 +147,32 @@ class VariationalAutoEncoder:
             self.encoding: encoding,
             self.noise: noise
         })
+
+
+def autoencode(*, tf_cfg, env_config):
+    with utils.TfEnvContext(tf_cfg, env_config) as context:
+        utils.logger.configure()
+        vae = VariationalAutoEncoder(
+            obs_shape=context.env_context.environments.observation_space.shape,
+            d_classes=20,
+            d_embedding=30
+        )
+
+
+if __name__ == '__main__':
+    tf_config = tf.ConfigProto(
+        allow_soft_placement=True,
+        intra_op_parallelism_threads=8,
+        inter_op_parallelism_threads=8,
+        device_count={'GPU': 1},
+        log_device_placement=False
+    )
+    tf_config.gpu_options.allow_growth = True
+
+    env_config = {
+        'env_name': 'PongNoFrameskip-v4',
+        'n_envs': 8,
+        'seed': 32,
+        'one_hot_code': False
+    }
+    autoencode(tf_cfg=tf_config, env_config=env_config)

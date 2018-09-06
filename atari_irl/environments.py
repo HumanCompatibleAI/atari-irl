@@ -11,7 +11,13 @@ from gym.spaces.discrete import Discrete
 from sandbox.rocky.tf.spaces import Box
 import gym
 import ple
-from atari_irl.utils import one_hot
+
+def one_hot(x, dim):
+    assert isinstance(x, list) or len(x.shape) == 1
+    ans = np.zeros((len(x), dim))
+    for n, i in enumerate(x):
+        ans[n, i] = 1
+    return ans
 
 def vec_normalize(env):
     return VecNormalize(env)

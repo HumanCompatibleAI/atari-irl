@@ -25,6 +25,7 @@ from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common import set_global_seeds
 
 from atari_irl import environments
+from atari_irl.environments import one_hot
 
 import gym
 import csv
@@ -110,14 +111,6 @@ def read_cols_from_dict(dirname, *cols, start=0, end=-1):
 
 def plot_from_dirname(dirname):
     plt.plot(*read_cols_from_dict(dirname,'total_timesteps', 'eprewmean'))
-
-
-def one_hot(x, dim):
-    assert isinstance(x, list) or len(x.shape) == 1
-    ans = np.zeros((len(x), dim))
-    for n, i in enumerate(x):
-        ans[n, i] = 1
-    return ans
 
 
 def batched_call(fn, batch_size, args, check_safety=True):
