@@ -110,6 +110,7 @@ class PPOSample:
     ):
         self.obs = np.asarray(obs)
         self.rewards = np.asarray(rewards)
+        self.returns = rewards # match PPOBatch
         self.actions = np.asarray(actions)
         self.values = np.asarray(values)
         self.dones = np.asarray(dones)
@@ -162,9 +163,14 @@ class PPOSample:
                 all_data.actions[start:end],
                 all_data.values[start:end],
                 all_data.neglogpacs[start:end],
-                None, None
+                None,
+                None
             )
 
+    def to_ppo_batch(self):
+        return self.sampler.process_to_ppo_batch(
+            self, gamma=self.sampler.gamma, lam=self.sampler.lam
+        )
 
     def _ravel_time_env_batch_to_train_batch(self, inpt):
         assert inpt.shape[0] == self.sample_batch_timesteps
@@ -276,10 +282,15 @@ class PPOSample:
         return map(process_data, zip(keys, data))
 
 
+class DummyAlgo:
+    def __init__(self, policy):
+        self.policy = policy
+
+
 class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
     # If you want to use the baselines PPO sampler as a sampler for the
     # airl interfaced code, use this.
-    def __init__(self, algo, *, nsteps, baselines_venv, gamma, lam):
+    def __init__(self, algo, *, nsteps, baselines_venv, gamma=0.99, lam=0.95):
         model = algo.policy.model
         env = baselines_venv
         # The biggest weird thing about this piece of code is that it does a
