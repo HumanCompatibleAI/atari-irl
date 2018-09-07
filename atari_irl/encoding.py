@@ -1,8 +1,14 @@
 from atari_irl import utils
 import tensorflow as tf
 import numpy as np
-from baselines.a2c.utils import conv, fc, conv_to_fc
 
+import joblib
+import os.path as osp
+
+from baselines.a2c.utils import conv, fc, conv_to_fc
+from baselines.ppo2 import ppo2
+
+from collections import deque
 
 def batch_norm(name, x):
     shape = (1, *x.shape[1:])
@@ -46,50 +52,53 @@ class VariationalAutoEncoder:
     def _process_obs_tensor(obs):
         return tf.cast(obs, tf.float32)
 
-    def __init__(self, *, obs_shape, d_classes, d_embedding, obs_dtype=tf.int32, **conv_kwargs):
+    def __init__(self, *, obs_shape, d_classes, d_embedding, embedding_weight=0.01, obs_dtype=tf.int32, **conv_kwargs):
         self.obs_dtype = obs_dtype
         self.obs_shape = obs_shape
         self.d_classes = d_classes
         self.d_embedding = d_embedding
+        self.embedding_weight = embedding_weight
 
-        with tf.variable_scope('encoder') as _es:
-            self.obs_t = tf.placeholder(obs_dtype, list((None,) + self.obs_shape), name='obs')
-            processed_obs_t = self._process_obs_tensor(self.obs_t)
-            h_obs, final_conv_shape = dcgan_cnn(processed_obs_t, d_embedding, **conv_kwargs)
+        with tf.variable_scope('autoencoder') as scope:
+            with tf.variable_scope('encoder') as _es:
+                self.obs_t = tf.placeholder(obs_dtype, list((None,) + self.obs_shape), name='obs')
+                processed_obs_t = self._process_obs_tensor(self.obs_t)
+                h_obs, final_conv_shape = dcgan_cnn(processed_obs_t, d_embedding, **conv_kwargs)
 
-            self.encoding = h_obs
-            self._final_conv_shape = tuple(s.value for s in final_conv_shape[1:])
-            self.encoder_scope = _es
+                self.encoding = h_obs
+                self._final_conv_shape = tuple(s.value for s in final_conv_shape[1:])
+                self.encoder_scope = _es
 
-        self.encoding_shape = tuple(s.value for s in self.encoding.shape[1:])
+            self.encoding_shape = tuple(s.value for s in self.encoding.shape[1:])
 
-        with tf.variable_scope('decoder') as _ds:
-            self.noise = tf.placeholder(tf.float32, [None, self.d_embedding], name='noise')
-            # This part of the observation model handles our class predictions
-            self.logits = decoder_cnn(
-                self.encoding + self.noise,
-                self._final_conv_shape,
-                self.d_classes
-            )
-            self.logp_class = tf.nn.log_softmax(self.logits)
+            with tf.variable_scope('decoder') as _ds:
+                self.noise = tf.placeholder(tf.float32, [None, self.d_embedding], name='noise')
+                # This part of the observation model handles our class predictions
+                self.logits = decoder_cnn(
+                    self.encoding + self.noise,
+                    self._final_conv_shape,
+                    self.d_classes
+                )
+                self.logp_class = tf.nn.log_softmax(self.logits)
 
-            # this part of the observation model handles our softclass parameters
-            means = tf.get_variable(
-                'mean', [self.d_classes], dtype=tf.float32,
-                initializer=tf.random_uniform_initializer([self.d_classes], maxval=255)
-            )
-            sigsqs = tf.clip_by_value(
-                tf.get_variable(
-                    'sigsq', [self.d_classes], dtype=tf.float32,
-                    initializer=tf.random_normal_initializer([self.d_classes], stddev=0.1)
-                ), 0, 10
-            )
-            self.dist = tf.distributions.Normal(loc=means, scale=sigsqs)
+                # this part of the observation model handles our softclass parameters
+                means = tf.get_variable(
+                    'mean', [self.d_classes], dtype=tf.float32,
+                    initializer=tf.random_uniform_initializer([self.d_classes], maxval=255)
+                )
+                sigsqs = tf.clip_by_value(
+                    tf.get_variable(
+                        'sigsq', [self.d_classes], dtype=tf.float32,
+                        initializer=tf.random_normal_initializer([self.d_classes], stddev=0.1)
+                    ), 0, 10
+                )
+                self.dist = tf.distributions.Normal(loc=means, scale=sigsqs)
 
-            # if we want to assign an "unknown" class, give a uniform
-            # distribution over pixel values
-            unk_value = tf.constant((1.0 / 255))
-            self.decoder_scope = _ds
+                # if we want to assign an "unknown" class, give a uniform
+                # distribution over pixel values
+                unk_value = tf.constant((1.0 / 255))
+                self.decoder_scope = _ds
+            self.params = tf.trainable_variables(scope='autoencoder')
 
         with tf.variable_scope('optimization') as _os:
             # self.nobs_t = tf.placeholder(obs_dtype, list((None,) + self.dOshape), name='nobs')
@@ -113,7 +122,7 @@ class VariationalAutoEncoder:
                 # add the log probabilities to get the probability for a whole
                 # image
                 tf.reduce_sum(s, axis=[1, 2])
-            ) + .01 * tf.reduce_mean(
+            ) + self.embedding_weight * tf.reduce_mean(
                 # regularize the encoding
                 tf.reduce_sum(self.encoding ** 2, axis=1)
             )
@@ -143,20 +152,95 @@ class VariationalAutoEncoder:
 
     def decode(self, encoding):
         noise = np.zeros(encoding.shape)
-        return tf.get_default_session().run([self.logp_class], feed_dict={
+        return tf.get_default_session().run(
+            [self.logp_class, self.dist.loc, self.dist.scale], feed_dict={
             self.encoding: encoding,
             self.noise: noise
         })
 
+    def compare(self, obs, disp_p=0.01):
+        preds, means, stds = self.decode(self.encode(obs))
+        means = np.hstack([means, np.array([255.0 / 2])])
+        img = (np.exp(preds) * means).sum(axis=3)
+        full_img = []
+        for i in range(len(img)):
+            if np.random.random() < disp_p:
+                full_img.append(np.hstack([img[i], obs[i, :, :, -1]]))
+        return np.vstack(full_img)
 
-def autoencode(*, tf_cfg, env_config):
-    with utils.TfEnvContext(tf_cfg, env_config) as context:
+    def save(self, save_path):
+        ps = tf.get_default_session().run(self.params)
+        joblib.dump(ps, save_path)
+
+    def load(self, load_path):
+        loaded_params = joblib.load(load_path)
+        restores = []
+        for p, loaded_p in zip(self.params, loaded_params):
+            restores.append(p.assign(loaded_p))
+        tf.get_default_session().run(restores)
+
+
+def autoencode(*, tf_cfg, env_cfg):
+    with utils.TfEnvContext(tf_cfg, env_cfg) as context:
         utils.logger.configure()
         vae = VariationalAutoEncoder(
             obs_shape=context.env_context.environments.observation_space.shape,
             d_classes=20,
-            d_embedding=30
+            d_embedding=30,
+            embedding_weight=0.01
         )
+        LR = 1e-4
+
+        tf.get_default_session().run(tf.local_variables_initializer())
+        tf.get_default_session().run(tf.global_variables_initializer())
+
+        buffer = deque(maxlen=500)
+
+        env = context.env_context.environments
+        env.reset()
+        num_timesteps = 10000
+        for i in range(num_timesteps):
+            lr = LR * (num_timesteps - i) * 1.0 / num_timesteps
+            obs = []
+            for t in range(128):
+                acts = [env.action_space.sample() for _ in range(env.num_envs)]
+                obs.append(env.step(acts)[0])
+            obs = np.array(obs).astype(np.uint8)
+            obs[:, :, :10, :, :] = 87.0
+            obs_batch = ppo2.sf01(obs)
+
+            if i == 0:
+                initial_obs = obs[:, 0, :, :, :]
+                for n in range(500):
+                    loss = vae.train_step(lr=2.5e-4, obs=initial_obs[:100])
+                    if n % 100 == 0:
+                        print(f"Initial burn in {n}/1000: {loss}")
+                joblib.dump(
+                    vae.compare(initial_obs[:120], disp_p=1),
+                    osp.join(utils.logger.get_dir(), 'overfit_check.pkl')
+                )
+
+            if i % 100 == 0:
+                joblib.dump(
+                    vae.compare(obs_batch),
+                    osp.join(utils.logger.get_dir(), f'img_{i}.pkl')
+                )
+                #for epoch in range(4):
+                #    for idx in np.random.permutation([i for i in range(len(buffer))]):
+                #        vae.train_step(lr=lr, obs=buffer[idx])
+                if i < 1000 or i % 1000 == 0:
+                    vae.save(osp.join(utils.logger.get_dir(), f'vae_{i}.pkl'))
+
+            buffer.append(obs_batch)
+            utils.logger.logkv(
+                'score',
+                vae.train_step(
+                    lr=lr,
+                    obs=buffer[np.random.randint(len(buffer))]
+                )
+            )
+
+            utils.logger.dumpkvs()
 
 
 if __name__ == '__main__':
@@ -175,4 +259,4 @@ if __name__ == '__main__':
         'seed': 32,
         'one_hot_code': False
     }
-    autoencode(tf_cfg=tf_config, env_config=env_config)
+    autoencode(tf_cfg=tf_config, env_cfg=env_config)

@@ -760,8 +760,6 @@ def get_training_kwargs(
         sampler_args=dict(
             baselines_venv=baselines_venv,
             nsteps=nsteps_sampler,
-            gamma=0.99,
-            lam=0.95
         ),
         optimizer_args=dict(
             batching_config=batching_config,
