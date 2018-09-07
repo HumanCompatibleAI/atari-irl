@@ -64,7 +64,6 @@ class VariationalAutoEncoder:
             obs_shape, d_classes, d_embedding,
             embedding_weight=0.01,
             obs_dtype=tf.int32,
-            minval=0,
             **conv_kwargs
     ):
         self.obs_dtype = obs_dtype
@@ -101,7 +100,7 @@ class VariationalAutoEncoder:
                 means = tf.get_variable(
                     'mean', [self.d_classes], dtype=tf.float32,
                     initializer=tf.random_uniform_initializer(
-                        minval=minval,
+                        [self.d_classes],
                         maxval=255
                     )
                 )
@@ -205,7 +204,7 @@ class VariationalAutoEncoder:
 class NextStepVariationalAutoEncoder(VariationalAutoEncoder):
     def __init__(self, num_actions=6, **kwargs):
         self.num_actions = num_actions
-        super().__init__(minval=-255, **kwargs)
+        super().__init__(**kwargs)
 
     def _check_acts(self, acts):
         assert len(acts.shape) == 1
