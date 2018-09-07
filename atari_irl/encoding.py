@@ -52,30 +52,45 @@ class VariationalAutoEncoder:
     def _process_obs_tensor(obs):
         return tf.cast(obs, tf.float32)
 
-    def __init__(self, *, obs_shape, d_classes, d_embedding, embedding_weight=0.01, obs_dtype=tf.int32, **conv_kwargs):
+    def _get_frame(self):
+        return self.obs_t[:, :, :, -1:]
+
+    def _get_final_encoding(self):
+        self.noise = tf.placeholder(tf.float32, [None, self.d_embedding], name='noise')
+        return self.cnn_embedding + self.noise
+
+    def __init__(
+            self, *,
+            obs_shape, d_classes, d_embedding,
+            embedding_weight=0.01,
+            obs_dtype=tf.int32,
+            minval=0,
+            **conv_kwargs
+    ):
         self.obs_dtype = obs_dtype
         self.obs_shape = obs_shape
         self.d_classes = d_classes
         self.d_embedding = d_embedding
         self.embedding_weight = embedding_weight
+        self.obs_dtype = obs_dtype
 
         with tf.variable_scope('autoencoder') as scope:
             with tf.variable_scope('encoder') as _es:
-                self.obs_t = tf.placeholder(obs_dtype, list((None,) + self.obs_shape), name='obs')
+                self.obs_t = tf.placeholder(self.obs_dtype, list((None,) + self.obs_shape), name='obs')
                 processed_obs_t = self._process_obs_tensor(self.obs_t)
                 h_obs, final_conv_shape = dcgan_cnn(processed_obs_t, d_embedding, **conv_kwargs)
 
-                self.encoding = h_obs
+                self.cnn_embedding = h_obs
                 self._final_conv_shape = tuple(s.value for s in final_conv_shape[1:])
+                self.encoding = self._get_final_encoding()
                 self.encoder_scope = _es
 
             self.encoding_shape = tuple(s.value for s in self.encoding.shape[1:])
 
             with tf.variable_scope('decoder') as _ds:
-                self.noise = tf.placeholder(tf.float32, [None, self.d_embedding], name='noise')
                 # This part of the observation model handles our class predictions
                 self.logits = decoder_cnn(
-                    self.encoding + self.noise,
+                    self.encoding,
                     self._final_conv_shape,
                     self.d_classes
                 )
@@ -85,7 +100,10 @@ class VariationalAutoEncoder:
                 # this part of the observation model handles our softclass parameters
                 means = tf.get_variable(
                     'mean', [self.d_classes], dtype=tf.float32,
-                    initializer=tf.random_uniform_initializer([self.d_classes], maxval=255)
+                    initializer=tf.random_uniform_initializer(
+                        minval=minval,
+                        maxval=255
+                    )
                 )
                 sigsqs = tf.clip_by_value(
                     tf.get_variable(
@@ -105,14 +123,16 @@ class VariationalAutoEncoder:
             # self.nobs_t = tf.placeholder(obs_dtype, list((None,) + self.dOshape), name='nobs')
             # processed_jobs_t = self.nobs_t
 
-            frame = self.obs_t[:, :, :, -1:]
+            self.frame = self._get_frame()
 
             # Calculate the log probability for the pixel value for each
             # individual class
             self.logps = tf.concat([
                 # For the normal classes, it's based on the gaussian
                 # distribution for each class
-                self.logp_class[:, :, :, :-1] + self.dist.log_prob(tf.cast(frame, tf.float32)),
+                self.logp_class[:, :, :, :-1] + self.dist.log_prob(
+                    tf.cast(self.frame, tf.float32)
+                ),
                 # For the "unk" class, it's a uniform probability over pixel values
                 self.logp_class[:, :, :, -1:] + tf.log(unk_value)
             ], axis=3)
@@ -145,24 +165,25 @@ class VariationalAutoEncoder:
         )
         return loss
 
-    def encode(self, obs):
+    def encode(self, obs, *args):
         self._check_obs(obs)
+        noise = np.zeros((obs.shape[0], self.d_embedding))
         return tf.get_default_session().run(self.encoding, feed_dict={
-            self.obs_t: obs
-        })
-
-    def decode(self, encoding):
-        noise = np.zeros(encoding.shape)
-        return tf.get_default_session().run(
-            [self.logp_class, self.dist.loc, self.dist.scale], feed_dict={
-            self.encoding: encoding,
+            self.obs_t: obs,
             self.noise: noise
         })
 
-    def compare(self, obs, disp_p=0.01):
-        preds, means, stds = self.decode(self.encode(obs))
+    def decode(self, encoding):
+        preds, means, stds = tf.get_default_session().run(
+            [self.logp_class, self.dist.loc, self.dist.scale], feed_dict={
+            self.encoding: encoding
+        })
         means = np.hstack([means, np.array([255.0 / 2])])
         img = (np.exp(preds) * means).sum(axis=3)
+        return img
+
+    def compare(self, obs, disp_p=0.01):
+        img = self.decode(self.encode(obs))
         full_img = []
         for i in range(len(img)):
             if np.random.random() < disp_p:
@@ -179,6 +200,72 @@ class VariationalAutoEncoder:
         for p, loaded_p in zip(self.params, loaded_params):
             restores.append(p.assign(loaded_p))
         tf.get_default_session().run(restores)
+
+
+class NextStepVariationalAutoEncoder(VariationalAutoEncoder):
+    def __init__(self, num_actions=6, **kwargs):
+        self.num_actions = num_actions
+        super().__init__(minval=-255, **kwargs)
+
+    def _check_acts(self, acts):
+        assert len(acts.shape) == 1
+        assert (acts >= 0).all()
+        assert (acts < self.num_actions).all()
+
+    def _get_frame(self):
+        # Now our frame is the difference between the current
+        self.nobs_t = tf.placeholder(self.obs_dtype, list((None,) + self.obs_shape), name='obs')
+        return self.nobs_t[:, :, :, -1:] - self.obs_t[:, :, :, -1:]
+
+    def _get_final_encoding(self):
+        embedding = super()._get_final_encoding()
+        self.acts_t = tf.placeholder(tf.int32, [None], name='actions')
+        self.action_embeddings = tf.get_variable(
+            'action_embeddings',
+            [self.num_actions, self.d_embedding],
+            dtype=tf.float32,
+            initializer=tf.random_normal_initializer(
+                [self.d_embedding],
+                stddev=0.1
+            )
+        )
+        self.action_modifier = tf.nn.embedding_lookup(
+            self.action_embeddings, self.acts_t
+        )
+        return embedding + self.action_modifier
+
+    def train_step(self, *, lr, obs, acts, nobs, noise=None):
+        self._check_obs(obs)
+        if noise is None:
+            noise = np.zeros((obs.shape[0], self.d_embedding))
+        frame, loss, _ = tf.get_default_session().run(
+            [self.frame, self.loss, self.step], feed_dict={
+                self.lr: lr,
+                self.obs_t: obs,
+                self.acts_t: acts,
+                self.nobs_t: nobs,
+                self.noise: noise
+            }
+        )
+        return loss, frame
+
+    def encode(self, obs, acts):
+        self._check_obs(obs)
+        self._check_acts(acts)
+        noise = np.zeros((obs.shape[0], self.d_embedding))
+        return tf.get_default_session().run(self.encoding, feed_dict={
+            self.obs_t: obs,
+            self.noise: noise,
+            self.acts_t: acts
+        })
+
+    def compare(self, obs, acts, nobs, disp_p=0.01):
+        img = self.decode(self.encode(obs, acts))
+        full_img = []
+        for i in range(len(img)):
+            if np.random.random() < disp_p:
+                full_img.append(np.hstack([img[i], nobs[i, :, :, -1] - obs[i, :, :, -1]]))
+        return np.vstack(full_img)
 
 
 def autoencode(*, tf_cfg, env_cfg):
