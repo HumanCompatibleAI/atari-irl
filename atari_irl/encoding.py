@@ -43,6 +43,8 @@ def decoder_cnn(embedding, start_conv_shape, dclasses):
 
 
 class VariationalAutoEncoder:
+    unk_mean = 255.0 / 2
+    
     @staticmethod
     def _check_obs(obs):
         assert (obs >= 0).all()
@@ -100,8 +102,9 @@ class VariationalAutoEncoder:
                 means = tf.get_variable(
                     'mean', [self.d_classes], dtype=tf.float32,
                     initializer=tf.random_uniform_initializer(
-                        [self.d_classes],
-                        maxval=255
+                        #[self.d_classes],
+                        maxval=255,
+                        minval=-255
                     )
                 )
                 sigsqs = tf.clip_by_value(
@@ -115,6 +118,9 @@ class VariationalAutoEncoder:
                 # if we want to assign an "unknown" class, give a uniform
                 # distribution over pixel values
                 unk_value = tf.constant((1.0 / 255))
+                if self.unk_mean == 0.0:
+                    unk_value = tf.constant((1.0 / (255 * 2)))
+                
                 self.decoder_scope = _ds
             self.params = tf.trainable_variables(scope='autoencoder')
 
@@ -177,8 +183,9 @@ class VariationalAutoEncoder:
             [self.logp_class, self.dist.loc, self.dist.scale], feed_dict={
             self.encoding: encoding
         })
-        means = np.hstack([means, np.array([255.0 / 2])])
+        means = np.hstack([means, np.array([self.unk_mean])])
         img = (np.exp(preds) * means).sum(axis=3)
+        
         return img
 
     def compare(self, obs, disp_p=0.01):
@@ -202,6 +209,8 @@ class VariationalAutoEncoder:
 
 
 class NextStepVariationalAutoEncoder(VariationalAutoEncoder):
+    unk_mean = 0.0
+    
     def __init__(self, num_actions=6, **kwargs):
         self.num_actions = num_actions
         super().__init__(**kwargs)
