@@ -93,7 +93,7 @@ class VariationalAutoEncoder:
                     self._final_conv_shape,
                     self.d_classes
                 )
-                self.logits = tf.clip_by_value(self.logits, -1e6, 1e6)
+                #self.logits = tf.clip_by_value(self.logits, -1e6, 1e6)
                 self.logp_class = tf.nn.log_softmax(self.logits)
 
                 # this part of the observation model handles our softclass parameters
