@@ -780,12 +780,6 @@ def get_training_kwargs(
 
 
 class IRLRunner(IRLTRPO):
-    """
-    This takes over the IRLTRPO code, to actually run IRL. Right now it has a
-    few issues...
-    [ ] It doesn't share the sample buffer between the discriminator and policy
-    [ ] It doesn't work on MuJoCo
-    """
     def __init__(
             self,
             *args,
