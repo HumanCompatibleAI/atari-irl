@@ -134,18 +134,6 @@ class PPOSample:
         self.probabilities = self._get_sample_probabilities()
 
     def to_ppo_batches(self, batch_size):
-        #
-        #
-        #
-        #
-        # I'm guessing that this is where things go wrong in buffered sampling
-        # -- if we reshape and then loop then we're doing all the updates for the
-        # different environments in order, and don't learn to generalize between them
-        # this is why we can get to about zero, but not further
-        #
-        #
-        #
-        #
         all_data = self.sampler.process_to_ppo_batch(
             self, gamma=self.sampler.gamma, lam=self.sampler.lam
         )
