@@ -276,7 +276,8 @@ class AtariAIRL(AIRL):
                  name='airl',
                  drop_framestack=False,
                  only_show_scores=False,
-                 rescore_expert_trajs=True
+                 rescore_expert_trajs=True,
+                 encoder_loc=None
                  ):
         super(AIRL, self).__init__()
 
@@ -297,7 +298,8 @@ class AtariAIRL(AIRL):
             name=name,
             rescore_expert_trajs=rescore_expert_trajs,
             drop_framestack=drop_framestack,
-            only_show_scores=only_show_scores
+            only_show_scores=only_show_scores,
+            encoder_loc=encoder_loc
         )
 
         if fusion:
@@ -320,6 +322,7 @@ class AtariAIRL(AIRL):
         self.max_itrs = max_itrs
         self.drop_framestack = drop_framestack
         self.only_show_scores = only_show_scores
+        self.encoder = None if not encoder_loc else joblib.load(open(encoder_loc, 'rb'))
         self.expert_cache = None
         self.rescore_expert_trajs = rescore_expert_trajs
         # build energy model
@@ -335,7 +338,7 @@ class AtariAIRL(AIRL):
             self.lr = tf.placeholder(tf.float32, (), name='lr')
 
             with tf.variable_scope('discrim') as dvs:
-                rew_input = self.obs_t
+                rew_input = self.encoder.encode(self.obs_t, self.act_t) if self.encoder else self.obs_t
                 with tf.variable_scope('reward'):
                     if self.state_only:
                         self.reward = reward_arch(
