@@ -574,7 +574,8 @@ def reward_model_config(
         score_discrim=True,
         max_itrs=100,
         drop_framestack=False,
-        only_show_scores=False
+        only_show_scores=False,
+        encoder_loc=None
 ):
     return dict(
         model=model,
@@ -586,7 +587,8 @@ def reward_model_config(
         score_discrim=score_discrim,
         max_itrs=max_itrs,
         drop_framestack=drop_framestack,
-        only_show_scores=only_show_scores
+        only_show_scores=only_show_scores,
+        encoder_loc=None
     )
 
 

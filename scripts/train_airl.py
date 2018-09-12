@@ -45,7 +45,8 @@ def train_airl(args):
             'drop_framestack': args.drop_discriminator_framestack,
             'only_show_scores': args.only_show_discriminator_scores,
             'reward_arch': cnn_net if args.policy_type == 'cnn' else relu_net,
-            'value_fn_arch': cnn_net if args.policy_type == 'cnn' else relu_net
+            'value_fn_arch': cnn_net if args.policy_type == 'cnn' else relu_net,
+            'encoder_loc': None if not args.encoder else args.encoder
         },
         ablation=args.ablation
     )

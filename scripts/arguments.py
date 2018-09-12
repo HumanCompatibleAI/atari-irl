@@ -89,6 +89,11 @@ def add_irl_args(parser):
         help='location to initialize training from',
         type=str, default='none'
     )
+    parser.add_argument(
+        '--encoder',
+        help='encoder location'
+        type=str, default=''
+    )
     add_bool_feature(parser, 'state_only', default=False)
     add_bool_feature(parser, 'drop_discriminator_framestack', default=False)
     add_bool_feature(parser, 'only_show_discriminator_scores', default=False)
