@@ -544,12 +544,6 @@ class PPOBatchBuffer(PPOSample):
         self.cur_idx += self.batch_T
         
     def to_ppo_batches(self, batch_size):
-        #all_data = self.sampler.process_to_ppo_batch(
-        #    self, gamma=self.sampler.gamma, lam=self.sampler.lam
-        #)
-        #if all_data.states is not None:
-        #    raise NotImplemented
-            
         for start in range(0, self.batch_T * self.n_batches, batch_size):
             end = start + batch_size
             s = slice(start, end)
@@ -564,20 +558,4 @@ class PPOBatchBuffer(PPOSample):
                 states=None, epinfos=None,
                 gamma=self.sampler.gamma,
                 lam=self.sampler.lam
-            ) 
-            
-        """
-        N = all_data.obs.shape[0]
-        assert N % batch_size == 0
-        for start in range(0, N, batch_size):
-            end = start + batch_size
-            yield PPOBatch(
-                adata.obs[start:end],
-                all_data.returns[start:end],
-                all_data.masks[start:end],
-                all_data.actions[start:end],
-                all_data.values[start:end],
-                all_data.neglogpacs[start:end],
-                None, None
             )
-        """
