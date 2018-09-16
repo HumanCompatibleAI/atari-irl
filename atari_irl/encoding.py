@@ -68,6 +68,13 @@ class VariationalAutoEncoder:
             obs_dtype=tf.int32,
             **conv_kwargs
     ):
+        self.kwargs = {
+            'obs_shape': obs_shape,
+            'd_classes': d_classes,
+            'd_embedding': d_embedding,
+            'embedding_weight': embedding_weight,
+            'obs_dtype': tf.int32
+        }
         self.obs_dtype = obs_dtype
         self.obs_shape = obs_shape
         self.d_classes = d_classes
@@ -198,14 +205,18 @@ class VariationalAutoEncoder:
 
     def save(self, save_path):
         ps = tf.get_default_session().run(self.params)
-        joblib.dump(ps, save_path)
-
-    def load(self, load_path):
-        loaded_params = joblib.load(load_path)
+        joblib.dump({'params': ps, 'kwargs': self.kwargs}, save_path)
+        
+    @classmethod
+    def load(cls, load_path):
+        data = joblib.load(load_path)
+        self = cls(**data['kwargs'])
+        loaded_params = data['params']
         restores = []
         for p, loaded_p in zip(self.params, loaded_params):
             restores.append(p.assign(loaded_p))
         tf.get_default_session().run(restores)
+        return self
 
 
 class NextStepVariationalAutoEncoder(VariationalAutoEncoder):
@@ -214,6 +225,8 @@ class NextStepVariationalAutoEncoder(VariationalAutoEncoder):
     def __init__(self, num_actions=6, **kwargs):
         self.num_actions = num_actions
         super().__init__(**kwargs)
+        self.kwargs = kwargs
+        self.kwargs['num_actions'] = num_actions
 
     def _check_acts(self, acts):
         assert len(acts.shape) == 1
