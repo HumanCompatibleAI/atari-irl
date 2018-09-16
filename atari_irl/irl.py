@@ -650,7 +650,8 @@ def training_config(
         step_size=0.01,
         irl_model_wt=1.0,
         zero_environment_reward=True,
-        buffer_batch_size=16
+        buffer_batch_size=16,
+        policy_update_freq=1,
 ):
     return dict(
         n_itr=n_itr,
@@ -662,7 +663,8 @@ def training_config(
         store_paths=False,
         irl_model_wt=irl_model_wt,
         zero_environment_reward=zero_environment_reward,
-        buffer_batch_size=buffer_batch_size
+        buffer_batch_size=buffer_batch_size,
+        policy_update_freq=policy_update_freq,
     )
 
 
