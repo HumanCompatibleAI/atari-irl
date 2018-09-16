@@ -17,13 +17,14 @@ from airl.models.airl_state import AIRL
 from airl.utils.log_utils import rllab_logdir
 from airl.models.fusion_manager import RamFusionDistr
 from airl.utils import TrainingIterator
+from airl.models.architectures import relu_net
 
 from baselines.ppo2.policies import CnnPolicy
 from baselines.a2c.utils import conv, fc, conv_to_fc
 
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecOneHotEncodingEnv
 from .utils import one_hot, TfEnvContext
-from . import sampling, training, utils, optimizers, policies
+from . import sampling, training, utils, optimizers, policies, encoding
 
 from sandbox.rocky.tf.misc import tensor_utils
 
@@ -205,28 +206,24 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
                 print(f"Warning: different values for {key}")
         self.restore_param_values(data['tf_params'])
 
-
+        
+def batch_norm(x, name):
+    shape = (1, *x.shape[1:])
+    with tf.variable_scope(name):
+        mean = tf.get_variable('mean', shape, initializer=tf.constant_initializer(0.0))
+        variance = tf.get_variable('variance', shape, initializer=tf.constant_initializer(1.0))
+        offset = tf.get_variable('offset', shape, initializer=tf.constant_initializer(0.0))
+        scale = tf.get_variable('scale', shape, initializer=tf.constant_initializer(1.0))
+    return tf.nn.batch_normalization(x, mean, variance, offset, scale, 0.001, name)
+   
+    
 def dcgan_cnn(unscaled_images, **conv_kwargs):
     """
     CNN from Nature paper.
     """
     scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
-
-    def batch_norm(x, name):
-        shape = (1, *x.shape[1:])
-        with tf.variable_scope(name):
-            mean = tf.get_variable('mean', shape, initializer=tf.constant_initializer(0.0))
-            variance = tf.get_variable('variance', shape, initializer=tf.constant_initializer(1.0))
-            offset = tf.get_variable('offset', shape, initializer=tf.constant_initializer(0.0))
-            scale = tf.get_variable('scale', shape, initializer=tf.constant_initializer(1.0))
-        return tf.nn.batch_normalization(
-            x, mean, variance, offset, scale, 0.001, name
-        )
-
     activ = lambda name, inpt: tf.nn.leaky_relu(batch_norm(inpt, name))
-
-    h = activ('l1', conv(scaled_images, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2),
-                   **conv_kwargs))
+    h = activ('l1', conv(scaled_images, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2), **conv_kwargs))
     h2 = activ('l2', conv(h, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
     h3 = activ('l3', conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
     h3 = conv_to_fc(h3)
@@ -249,6 +246,11 @@ def cnn_net(x, actions=None, dout=1, **conv_kwargs):
         ], axis=1)
     output = fc(h, 'output', nh=dout, init_scale=np.sqrt(2))
     return output
+
+def mlp_net(x, layers=2, actions=None, dout=1):
+    if actions is not None:
+        x = tf.concat([x, actions], axis=1)
+    return relu_net(x, layers=layers, dout=dout) 
 
 
 class AtariAIRL(AIRL):
