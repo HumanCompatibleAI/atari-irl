@@ -304,15 +304,24 @@ class AtariAIRL(AIRL):
             encoder_loc=encoder_loc
         )
 
+        self.encoder = None if not encoder_loc else encoding.NextStepVariationalAutoEncoder.load(encoder_loc)
+        
         if fusion:
             self.fusion = RamFusionDistr(100, subsample_ratio=0.5)
         else:
             self.fusion = None
-        self.dO = env_spec.observation_space.flat_dim
-        self.dOshape = env_spec.observation_space.shape
+            
+        if self.encoder:
+            self.dO = self.encoder.encoding_shape
+            self.dOshape = self.encoder.encoding_shape
+        else:
+            self.dO = env_spec.observation_space.flat_dim
+            self.dOshape = env_spec.observation_space.shape
+            
         if drop_framestack:
             assert len(self.dOshape) == 3
             self.dOshape = (*self.dOshape[:-1], 1)
+            
         self.dU = env_spec.action_space.flat_dim
         assert isinstance(env_spec.action_space, Box)
         self.score_discrim = score_discrim
@@ -324,7 +333,7 @@ class AtariAIRL(AIRL):
         self.max_itrs = max_itrs
         self.drop_framestack = drop_framestack
         self.only_show_scores = only_show_scores
-        self.encoder = None if not encoder_loc else joblib.load(open(encoder_loc, 'rb'))
+        
         self.expert_cache = None
         self.rescore_expert_trajs = rescore_expert_trajs
         # build energy model
@@ -340,7 +349,7 @@ class AtariAIRL(AIRL):
             self.lr = tf.placeholder(tf.float32, (), name='lr')
 
             with tf.variable_scope('discrim') as dvs:
-                rew_input = self.encoder.encode(self.obs_t, self.act_t) if self.encoder else self.obs_t
+                rew_input = self.obs_t
                 with tf.variable_scope('reward'):
                     if self.state_only:
                         self.reward = reward_arch(
@@ -419,19 +428,30 @@ class AtariAIRL(AIRL):
         self.set_params(data['tf_params'])
 
     def get_ablation_modifiers(self):
-        def process_obs(obs):
+        def process_obs(obs, key=None, sample=None):
             if self.drop_framestack:
                 obs = obs[:, :, :, -1:]
             if self.only_show_scores:
                 obs = obs.copy()
                 obs[:, :, :42, :] *= 0
                 obs[:, 10:, :, :] *= 0
+            if self.encoder and key:
+                assert not self.drop_framestack
+                assert not self.only_show_scores
+                if 'next' in key:
+                    nacts, = sample.extract_paths(keys=('actions_next',))
+                    obs = self.encoder.encode(obs, nacts.argmax(axis=1))
+                else:
+                    acts, = sample.extract_paths(keys=('actions',))
+                    obs = self.encoder.encode(obs, acts.argmax(axis=1))
+
             return obs
         return process_obs
 
     @overrides
     def fit(self, paths, policy=None, batch_size=256, logger=None, lr=1e-3, itr=0, **kwargs):
         if isinstance(self.expert_trajs[0], dict):
+            print("Warning: Processing state out of dictionary")
             self._insert_next_state(self.expert_trajs)
             expert_obs_base, expert_obs_next_base, expert_acts, expert_acts_next = \
                 self.extract_paths(self.expert_trajs, keys=(
@@ -470,6 +490,9 @@ class AtariAIRL(AIRL):
             )
             expert_obs_batch = self.modify_obs(expert_obs_batch)
             nexpert_obs_batch = self.modify_obs(nexpert_obs_batch)
+            if self.encoder:
+                expert_obs_batch = self.encoder.encode(expert_obs_batch, expert_act_batch.argmax(axis=1))
+                nexpert_obs_batch = self.encoder.encode(nexpert_obs_batch, nexpert_act_batch.argmax(axis=1))
 
             # Build feed dict
             labels = np.zeros((batch_size*2, 1))
