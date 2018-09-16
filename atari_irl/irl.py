@@ -386,7 +386,9 @@ class AtariAIRL(AIRL):
             self.grad_reward = tf.gradients(self.reward, [self.obs_t, self.act_t])
 
             self.modify_obs = self.get_ablation_modifiers()
-            self.mean_score = 0
+            
+            self.score_mean = 0
+            self.score_std = 1
 
     def change_kwargs(self, **kwargs):
         for key, value in kwargs.items():
@@ -447,6 +449,12 @@ class AtariAIRL(AIRL):
 
             return obs
         return process_obs
+    
+    def _process_discrim_output(self, score):
+        score = np.clip(score, 1e-7, 1-1e-7)
+        score = np.log(score) - np.log(1-score)
+        score = score[:, 0]
+        return (score - self.score_mean) / self.score_std
 
     @overrides
     def fit(self, paths, policy=None, batch_size=256, logger=None, lr=1e-3, itr=0, **kwargs):
@@ -470,6 +478,7 @@ class AtariAIRL(AIRL):
         expert_obs = expert_obs_base
         expert_obs_next = expert_obs_next_base
 
+        raw_discrim_scores = []
         # Train discriminator
         for it in TrainingIterator(self.max_itrs, heartbeat=5):
             nobs_batch, obs_batch, nact_batch, act_batch, lprobs_batch = \
@@ -517,11 +526,16 @@ class AtariAIRL(AIRL):
                 [self.loss, self.step, self.update_accuracy, self.discrim_output],
                 feed_dict=feed_dict
             )
-            scores = np.log(scores) - np.log(1-scores)
+            # we only want the average score for the non-expert demos
+            non_expert_slice = slice(0, batch_size)
+            score = self._process_discrim_output(scores[non_expert_slice])
+            assert len(score) == batch_size
+            assert np.sum(labels[non_expert_slice]) == 0
+            raw_discrim_scores.append(score * self.score_std + self.score_mean)
+            
             it.record('loss', loss)
             it.record('accuracy', acc)
-            # we only want the average score for the non-expert demos
-            it.record('avg_score', np.mean(scores[:batch_size]))
+            it.record('avg_score', np.mean(score))
             if it.heartbeat:
                 print(it.itr_message())
                 mean_loss = it.pop_mean('loss')
@@ -529,12 +543,18 @@ class AtariAIRL(AIRL):
                 mean_acc = it.pop_mean('accuracy')
                 print('\tAccuracy:%f' % mean_acc)
                 mean_score = it.pop_mean('avg_score')
+                
 
         if logger:
             logger.record_tabular('GCLDiscrimLoss', mean_loss)
             logger.record_tabular('GCLDiscrimAccuracy', mean_acc)
             logger.record_tabular('GCLMeanScore', mean_score)
-        self.mean_score = mean_score
+            
+        # set the center for our normal distribution
+        scores = np.hstack(raw_discrim_scores)
+        self.score_std = np.std(scores)
+        self.score_mean = np.mean(scores)
+        
         return mean_loss
 
     @overrides
@@ -557,8 +577,8 @@ class AtariAIRL(AIRL):
                     self.lprobs: path_probs
                 }
             )
-            score = np.log(scores) - np.log(1-scores)
-            score = score[:, 0]
+            score = self._process_discrim_output(scores)
+            
         else:
             obs, acts = samples.extract_paths(
                 ('observations', 'actions'), obs_modifier=self.modify_obs
@@ -567,9 +587,10 @@ class AtariAIRL(AIRL):
                 self.reward, feed_dict={self.act_t: acts, self.obs_t: obs}
             )
             score = reward[:,0]
+        
+        if np.isnan(np.mean(score)):
+            import pdb; pdb.set_trace()
             
-        score = np.clip((score - min(0, np.mean(score))) / (np.std(score)+1e-8), -3, 3)
-        score = score - min(0, np.mean(score))
         # TODO(Aaron, maybe): do something with show_grad
         return samples._ravel_train_batch_to_time_env_batch(score)
 
