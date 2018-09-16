@@ -600,7 +600,7 @@ def reward_model_config(
         reward_arch=cnn_net,
         value_fn_arch=cnn_net,
         score_discrim=True,
-        max_itrs=100,
+        max_itrs=1000,
         drop_framestack=False,
         only_show_scores=False,
         encoder_loc=None
@@ -616,7 +616,7 @@ def reward_model_config(
         max_itrs=max_itrs,
         drop_framestack=drop_framestack,
         only_show_scores=only_show_scores,
-        encoder_loc=None
+        encoder_loc=encoder_loc
     )
 
 
@@ -629,6 +629,7 @@ def training_config(
         step_size=0.01,
         irl_model_wt=1.0,
         zero_environment_reward=True,
+        buffer_batch_size=16
 ):
     return dict(
         n_itr=n_itr,
@@ -639,7 +640,8 @@ def training_config(
         step_size=step_size,
         store_paths=False,
         irl_model_wt=irl_model_wt,
-        zero_environment_reward=zero_environment_reward
+        zero_environment_reward=zero_environment_reward,
+        buffer_batch_size=buffer_batch_size
     )
 
 
@@ -693,7 +695,7 @@ def get_ablation_modifiers(*, irl_model, ablation):
         }
     )
     ablations['train_discriminator'] = Ablation(
-        policy_modifiers={'baseline_wrappers': []},
+        policy_modifiers={'baseline_wrappers': irl_reward_wrappers},
         discriminator_modifiers={
             'rescore_expert_trajs': False
         },
@@ -799,7 +801,7 @@ def get_training_kwargs(
             lr=3e-4,
             cliprange=0.2,
             total_timesteps=10e6
-        )
+        ),
     )
     training_kwargs.update(
         add_ablation(training_cfg, ablation_modifiers.training_modifiers)
@@ -821,6 +823,7 @@ class IRLRunner(IRLTRPO):
             skip_discriminator=False,
             optimizer=None,
             optimizer_args={},
+            buffer_batch_size=16,
             **kwargs
     ):
         if optimizer is None:
@@ -829,6 +832,7 @@ class IRLRunner(IRLTRPO):
         self.ablation = ablation
         self.skip_policy_update = skip_policy_update
         self.skip_discriminator = skip_discriminator
+        self.buffer_batch_size = buffer_batch_size
 
     @overrides
     def init_opt(self):
@@ -913,7 +917,7 @@ class IRLRunner(IRLTRPO):
             self.sampler.mean_length
         )
 
-        if itr % 3 == 0 and itr != 0:
+        if itr % 20 == 0 and itr != 0:
             logger.log("Saving snapshot...")
             params = self.get_itr_snapshot(itr)
             if self.store_paths:
@@ -966,21 +970,22 @@ class IRLRunner(IRLTRPO):
                 itr_start_time=itr_start_time
             )
 
-    def buffered_sample_train_policy(self, buffer_batch_size, itr, ppo_itr, buffer):
-        for i in range(buffer_batch_size):
+    def buffered_sample_train_policy(self, itr, ppo_itr, buffer):
+        for i in range(self.buffer_batch_size):
             batch = self.obtain_samples(ppo_itr)
 
             if not self.skip_discriminator:
                 # Create a buffer if we don't have one
                 if buffer is None:
-                    buffer = sampling.PPOBatchBuffer(batch, buffer_batch_size)
+                    buffer = sampling.PPOBatchBuffer(batch, self.buffer_batch_size)
 
                 # overwrite the rewards with the IRL model
                 if self.irl_model_wt > 0.0:
                     #logger.log("Overwriting batch rewards...")
                     assert np.isclose(np.sum(batch.rewards), 0)
-                    batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
-                    logger.log(f"GCL Score Average: {np.mean(batch.rewards)}")
+                    if itr > 0:
+                        batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
+                        logger.log(f"GCL Score Average: {np.mean(batch.rewards)}")
 
                 buffer.add(batch)
 
@@ -997,7 +1002,6 @@ class IRLRunner(IRLTRPO):
 
         ppo_itr = 0
         buffer = None
-        buffer_batch_size = 32
 
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
@@ -1005,7 +1009,7 @@ class IRLRunner(IRLTRPO):
                 logger.record_tabular('Itr', itr)
                 logger.log("Obtaining samples...")
                 buffer, ppo_itr = self.buffered_sample_train_policy(
-                    buffer_batch_size, itr, ppo_itr, buffer
+                    itr, ppo_itr, buffer
                 )
 
                 if not self.skip_discriminator:

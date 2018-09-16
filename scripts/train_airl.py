@@ -6,8 +6,7 @@ import tensorflow as tf
 import pickle
 import joblib
 from baselines.ppo2.policies import CnnPolicy, MlpPolicy
-from atari_irl.irl import cnn_net
-from airl.models.architectures import relu_net
+from atari_irl.irl import cnn_net, mlp_net
 
 
 def train_airl(args):
@@ -27,7 +26,8 @@ def train_airl(args):
         training_cfg={
             'n_itr': args.n_iter,
             'batch_size': args.batch_size,
-            'entropy_weight': args.entropy_wt
+            'entropy_weight': args.entropy_wt,
+            'buffer_batch_size': args.ppo_itrs_in_batch
         },
         env_config={
             'env_name': args.env,
@@ -44,9 +44,10 @@ def train_airl(args):
             'state_only': args.state_only,
             'drop_framestack': args.drop_discriminator_framestack,
             'only_show_scores': args.only_show_discriminator_scores,
-            'reward_arch': cnn_net if args.policy_type == 'cnn' else relu_net,
-            'value_fn_arch': cnn_net if args.policy_type == 'cnn' else relu_net,
-            'encoder_loc': None if not args.encoder else args.encoder
+            'reward_arch': cnn_net if args.reward_type == 'cnn' else mlp_net,
+            'value_fn_arch': cnn_net if args.reward_type == 'cnn' else mlp_net,
+            'encoder_loc': None if not args.encoder else args.encoder,
+            'max_itrs': args.discriminator_itrs
         },
         ablation=args.ablation
     )

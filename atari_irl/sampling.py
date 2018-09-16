@@ -253,7 +253,7 @@ class PPOSample:
         else:
             raise NotImplementedError
 
-    def extract_paths(self, keys, obs_modifier=lambda obs: obs):
+    def extract_paths(self, keys, obs_modifier=lambda obs, *args: obs):
         data = [
             ppo2.sf01(self.get_path_key(key))
             for key in keys
@@ -264,7 +264,7 @@ class PPOSample:
             if 'actions' in key:
                 return utils.one_hot(value.astype(np.int32), 6)
             elif 'observations' in key:
-                return obs_modifier(value)
+                return obs_modifier(value, key=key, sample=self)
             else:
                 return value
         return map(process_data, zip(keys, data))
