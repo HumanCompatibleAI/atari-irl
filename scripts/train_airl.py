@@ -27,7 +27,8 @@ def train_airl(args):
             'n_itr': args.n_iter,
             'batch_size': args.batch_size,
             'entropy_weight': args.entropy_wt,
-            'buffer_batch_size': args.ppo_itrs_in_batch
+            'buffer_batch_size': args.ppo_itrs_in_batch,
+            'policy_update_freq': args.policy_update_freq
         },
         env_config={
             'env_name': args.env,

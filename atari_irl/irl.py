@@ -845,6 +845,7 @@ class IRLRunner(IRLTRPO):
             optimizer=None,
             optimizer_args={},
             buffer_batch_size=16,
+            policy_update_freq=1,
             **kwargs
     ):
         if optimizer is None:
@@ -854,6 +855,7 @@ class IRLRunner(IRLTRPO):
         self.skip_policy_update = skip_policy_update
         self.skip_discriminator = skip_discriminator
         self.buffer_batch_size = buffer_batch_size
+        self.policy_update_freq = policy_update_freq
 
     @overrides
     def init_opt(self):
@@ -996,7 +998,7 @@ class IRLRunner(IRLTRPO):
             batch = self.obtain_samples(ppo_itr)
             logger.log(f"Sampled iteration {i}")
             
-            train_itr = (itr > 0 or self.skip_discriminator) and i % 4 == 0
+            train_itr = (itr > 0 or self.skip_discriminator) and i % self.policy_update_freq == 0
 
             if not self.skip_discriminator:
                 # Create a buffer if we don't have one
