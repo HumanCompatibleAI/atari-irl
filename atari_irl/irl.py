@@ -438,6 +438,7 @@ class AtariAIRL(AIRL):
                 obs[:, :, :42, :] *= 0
                 obs[:, 10:, :, :] *= 0
             if self.encoder and key:
+                assert sample
                 assert not self.drop_framestack
                 assert not self.only_show_scores
                 if 'next' in key:
@@ -454,7 +455,7 @@ class AtariAIRL(AIRL):
         score = np.clip(score, 1e-7, 1-1e-7)
         score = np.log(score) - np.log(1-score)
         score = score[:, 0]
-        return (score - self.score_mean) / self.score_std
+        return np.clip((score - self.score_mean) / self.score_std, -3, 3), score
 
     @overrides
     def fit(self, paths, policy=None, batch_size=256, logger=None, lr=1e-3, itr=0, **kwargs):
@@ -497,11 +498,13 @@ class AtariAIRL(AIRL):
                 expert_obs_batch,
                 expert_act_batch
             )
+
             expert_obs_batch = self.modify_obs(expert_obs_batch)
             nexpert_obs_batch = self.modify_obs(nexpert_obs_batch)
             if self.encoder:
                 expert_obs_batch = self.encoder.encode(expert_obs_batch, expert_act_batch.argmax(axis=1))
                 nexpert_obs_batch = self.encoder.encode(nexpert_obs_batch, nexpert_act_batch.argmax(axis=1))
+                
 
             # Build feed dict
             labels = np.zeros((batch_size*2, 1))
@@ -528,10 +531,10 @@ class AtariAIRL(AIRL):
             )
             # we only want the average score for the non-expert demos
             non_expert_slice = slice(0, batch_size)
-            score = self._process_discrim_output(scores[non_expert_slice])
+            score, raw_score = self._process_discrim_output(scores[non_expert_slice])
             assert len(score) == batch_size
             assert np.sum(labels[non_expert_slice]) == 0
-            raw_discrim_scores.append(score * self.score_std + self.score_mean)
+            raw_discrim_scores.append(raw_score)
             
             it.record('loss', loss)
             it.record('accuracy', acc)
@@ -577,7 +580,7 @@ class AtariAIRL(AIRL):
                     self.lprobs: path_probs
                 }
             )
-            score = self._process_discrim_output(scores)
+            score, _ = self._process_discrim_output(scores)
             
         else:
             obs, acts = samples.extract_paths(
