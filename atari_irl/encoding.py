@@ -194,6 +194,10 @@ class VariationalAutoEncoder:
         img = (np.exp(preds) * means).sum(axis=3)
         
         return img
+    
+    def base_vector(self, obs, *args):
+        self._check_obs(obs)
+        return tf.get_default_session().run(self.cnn_embedding, feed_dict={self.obs_t: obs})
 
     def compare(self, obs, disp_p=0.01):
         img = self.decode(self.encode(obs))

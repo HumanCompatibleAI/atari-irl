@@ -305,6 +305,13 @@ class AtariAIRL(AIRL):
         )
 
         self.encoder = None if not encoder_loc else encoding.NextStepVariationalAutoEncoder.load(encoder_loc)
+        self.encode_fn = None
+        if self.encoder:
+            if state_only:
+                self.encode_fn = self.encoder.base_vector
+            else:
+                self.encode_fn = self.encoder.encode
+                
         
         if fusion:
             self.fusion = RamFusionDistr(100, subsample_ratio=0.5)
@@ -443,10 +450,10 @@ class AtariAIRL(AIRL):
                 assert not self.only_show_scores
                 if 'next' in key:
                     nacts, = sample.extract_paths(keys=('actions_next',))
-                    obs = self.encoder.encode(obs, nacts.argmax(axis=1))
+                    obs = self.encode_fn(obs, nacts.argmax(axis=1))
                 else:
                     acts, = sample.extract_paths(keys=('actions',))
-                    obs = self.encoder.encode(obs, acts.argmax(axis=1))
+                    obs = self.encode_fn(obs, acts.argmax(axis=1))
 
             return obs
         return process_obs
@@ -502,8 +509,8 @@ class AtariAIRL(AIRL):
             expert_obs_batch = self.modify_obs(expert_obs_batch)
             nexpert_obs_batch = self.modify_obs(nexpert_obs_batch)
             if self.encoder:
-                expert_obs_batch = self.encoder.encode(expert_obs_batch, expert_act_batch.argmax(axis=1))
-                nexpert_obs_batch = self.encoder.encode(nexpert_obs_batch, nexpert_act_batch.argmax(axis=1))
+                expert_obs_batch = self.encode_fn(expert_obs_batch, expert_act_batch.argmax(axis=1))
+                nexpert_obs_batch = self.encode_fn(nexpert_obs_batch, nexpert_act_batch.argmax(axis=1))
                 
 
             # Build feed dict
