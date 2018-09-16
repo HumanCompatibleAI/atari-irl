@@ -994,25 +994,31 @@ class IRLRunner(IRLTRPO):
     def buffered_sample_train_policy(self, itr, ppo_itr, buffer):
         for i in range(self.buffer_batch_size):
             batch = self.obtain_samples(ppo_itr)
+            logger.log(f"Sampled iteration {i}")
+            
+            train_itr = (itr > 0 or self.skip_discriminator) and i % 4 == 0
 
             if not self.skip_discriminator:
                 # Create a buffer if we don't have one
                 if buffer is None:
                     buffer = sampling.PPOBatchBuffer(batch, self.buffer_batch_size)
+                    logger.log("Buffer initialized")
 
                 # overwrite the rewards with the IRL model
                 if self.irl_model_wt > 0.0:
                     #logger.log("Overwriting batch rewards...")
                     assert np.isclose(np.sum(batch.rewards), 0)
-                    if itr > 0:
+                    if train_itr:
                         batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
                         logger.log(f"GCL Score Average: {np.mean(batch.rewards)}")
-
+                        
                 buffer.add(batch)
 
-            if not self.skip_policy_update and (itr > 0 or self.skip_discriminator):
+            if not self.skip_policy_update and train_itr:
                 logger.log("Optimizing policy...")
                 self.optimize_policy(ppo_itr, batch)
+                
+            
                 
             ppo_itr += 1
 
