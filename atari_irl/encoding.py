@@ -65,7 +65,7 @@ class VariationalAutoEncoder:
             self, *,
             obs_shape, d_classes, d_embedding,
             embedding_weight=0.01,
-            obs_dtype=tf.int32,
+            obs_dtype=tf.int16,
             **conv_kwargs
     ):
         self.kwargs = {

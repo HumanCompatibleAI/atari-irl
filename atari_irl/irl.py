@@ -339,7 +339,7 @@ class AtariAIRL(AIRL):
         # build energy model
         with tf.variable_scope(name) as _vs:
             # Should be batch_size x T x dO/dU
-            obs_dtype = tf.int32 if reward_arch == cnn_net else tf.float32
+            obs_dtype = tf.int8 if reward_arch == cnn_net else tf.float32
             self.obs_t = tf.placeholder(obs_dtype, list((None,) + self.dOshape), name='obs')
             self.nobs_t = tf.placeholder(obs_dtype, list((None,) + self.dOshape), name='nobs')
             self.act_t = tf.placeholder(tf.float32, [None, self.dU], name='act')
