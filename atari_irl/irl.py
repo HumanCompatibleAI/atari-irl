@@ -558,7 +558,7 @@ class AtariAIRL(AIRL):
                 }
             )
             score = np.log(scores) - np.log(1-scores)
-            score = score[:,0] - min(self.mean_score, 0)
+            score = score[:, 0]
         else:
             obs, acts = samples.extract_paths(
                 ('observations', 'actions'), obs_modifier=self.modify_obs
@@ -567,6 +567,9 @@ class AtariAIRL(AIRL):
                 self.reward, feed_dict={self.act_t: acts, self.obs_t: obs}
             )
             score = reward[:,0]
+            
+        score = np.clip((score - min(0, np.mean(score))) / (np.std(score)+1e-8), -3, 3)
+        score = score - min(0, np.mean(score))
         # TODO(Aaron, maybe): do something with show_grad
         return samples._ravel_train_batch_to_time_env_batch(score)
 
