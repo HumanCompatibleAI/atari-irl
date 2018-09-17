@@ -19,7 +19,9 @@ from airl.models.fusion_manager import RamFusionDistr
 from airl.utils import TrainingIterator
 from airl.models.architectures import relu_net
 
-from baselines.ppo2.policies import CnnPolicy
+from gym import spaces
+
+from baselines.ppo2.policies import CnnPolicy, MlpPolicy
 from baselines.a2c.utils import conv, fc, conv_to_fc
 
 from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecOneHotEncodingEnv
@@ -48,11 +50,20 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             action_space,
             observation_space,
             batching_config,
-            init_location=None
+            init_location=None,
+            encoder=None
     ):
         Serializable.quick_init(self, locals())
         assert isinstance(wrapped_env_action_space, Box)
         self._dist = Categorical(wrapped_env_action_space.shape[0])
+        
+        self.encoder = encoder
+        if self.encoder and policy_model == MlpPolicy:
+            observation_space = spaces.Box(
+                shape=(self.encoder.d_embedding,),
+                low=np.finfo(np.float32).min,
+                high=np.finfo(np.float32).max
+            )
 
         # this is going to be serialized, so we can't add in the envs or
         # wrappers
@@ -101,6 +112,12 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         if init_location:
             data = joblib.load(open(init_location, 'rb'))
             self.restore_from_snapshot(data['policy_params'])
+            
+        if self.encoder and policy_model == MlpPolicy:
+            step = self.model.step
+            self.model.step = lambda obs, states, dones: step(
+                self.encoder.base_vector(obs), states, dones
+            )
 
     @property
     def vectorized(self):
@@ -609,13 +626,13 @@ def policy_config(
         name='policy',
         policy=DiscreteIRLPolicy,
         policy_model=CnnPolicy,
-        init_location=None
+        init_location=None,
 ):
     return dict(
         name=name,
         policy=policy,
         policy_model=policy_model,
-        init_location=init_location
+        init_location=init_location,
     )
 
 
@@ -814,6 +831,7 @@ def get_training_kwargs(
         nminibatches=4
     )
     policy_cfg['batching_config'] = batching_config
+    policy_cfg['encoder'] = irl_model.encoder
 
     training_kwargs = dict(
         env=envs,
@@ -1029,6 +1047,9 @@ class IRLRunner(IRLTRPO):
                 buffer.add(batch)
 
             if not self.skip_policy_update and train_itr:
+                if self.policy.init_args.policy_model == MlpPolicy:
+                    # Can't depend on action, so only base_vector is eligible
+                    batch.obs = self.policy.encoder.base_vector(batch.obs)
                 logger.log("Optimizing policy...")
                 self.optimize_policy(ppo_itr, batch)
                 
