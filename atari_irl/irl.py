@@ -1039,13 +1039,8 @@ class IRLRunner(IRLTRPO):
                 buffer.add(batch)
 
             if not self.skip_policy_update and train_itr:
-                if self.policy.init_args.policy_model == MlpPolicy:
-                    # Can't depend on action, so only base_vector is eligible
-                    batch.obs = self.policy.encoder.base_vector(batch.obs)
                 logger.log("Optimizing policy...")
                 self.optimize_policy(ppo_itr, batch)
-                
-            
                 
             ppo_itr += 1
             del batch
