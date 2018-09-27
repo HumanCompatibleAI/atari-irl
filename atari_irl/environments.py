@@ -8,6 +8,7 @@ from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.atari_wrappers import NoopResetEnv, MaxAndSkipEnv, wrap_deepmind
 from gym.spaces.discrete import Discrete
+from gym import spaces
 from sandbox.rocky.tf.spaces import Box
 import gym
 import ple
@@ -112,6 +113,29 @@ class VecIRLRewardEnv(VecEnvWrapper):
         self.prev_obs = None
         return self.venv.reset()
 
+    def step_wait(self):
+        self.venv.step_wait()
+        
+
+class EncoderWrappedEnv(VecEnvWrapper):
+    def __init__(self, env, *, encoder):
+        VecEnvWrapper.__init__(self, env)
+        self.encoder = encoder
+        self.observation_space = spaces.Box(
+            shape=(self.encoder.d_embedding,),
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max
+        )
+        print("Wrapping with encoder")
+        
+    def step(self, acts):
+        obs, rewards, done, info = self.venv.step(acts)
+        obs = self.encoder.base_vector(obs)
+        return obs, rewards, done, info
+    
+    def reset(self):
+        return self.encoder.base_vector(self.venv.reset())
+    
     def step_wait(self):
         self.venv.step_wait()
 
