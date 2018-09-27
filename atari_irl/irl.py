@@ -19,12 +19,10 @@ from airl.models.fusion_manager import RamFusionDistr
 from airl.utils import TrainingIterator
 from airl.models.architectures import relu_net
 
-from gym import spaces
-
 from baselines.ppo2.policies import CnnPolicy, MlpPolicy
 from baselines.a2c.utils import conv, fc, conv_to_fc
 
-from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecOneHotEncodingEnv
+from .environments import VecGymEnv, wrap_env_with_args, VecRewardZeroingEnv, VecOneHotEncodingEnv, EncoderWrappedEnv
 from .utils import one_hot, TfEnvContext
 from . import sampling, training, utils, optimizers, policies, encoding
 
@@ -56,14 +54,6 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         Serializable.quick_init(self, locals())
         assert isinstance(wrapped_env_action_space, Box)
         self._dist = Categorical(wrapped_env_action_space.shape[0])
-        
-        self.encoder = encoder
-        if self.encoder and policy_model == MlpPolicy:
-            observation_space = spaces.Box(
-                shape=(self.encoder.d_embedding,),
-                low=np.finfo(np.float32).min,
-                high=np.finfo(np.float32).max
-            )
 
         # this is going to be serialized, so we can't add in the envs or
         # wrappers
@@ -113,11 +103,7 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
             data = joblib.load(open(init_location, 'rb'))
             self.restore_from_snapshot(data['policy_params'])
             
-        if self.encoder and policy_model == MlpPolicy:
-            step = self.model.step
-            self.model.step = lambda obs, states, dones: step(
-                self.encoder.base_vector(obs), states, dones
-            )
+            
 
     @property
     def vectorized(self):
@@ -815,6 +801,8 @@ def get_training_kwargs(
         'baseline_wrappers'
     )
 
+    if irl_model.encoder and policy_cfg['policy_model'] == MlpPolicy:
+        baseline_wrappers += [wrap_env_with_args(EncoderWrappedEnv, encoder=irl_model.encoder)]
     baselines_venv = venv
     for fn in baseline_wrappers + [wrap_env_with_args(VecOneHotEncodingEnv, dim=6)]:
         print("Wrapping baseline with function")
