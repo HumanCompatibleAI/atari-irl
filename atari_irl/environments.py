@@ -151,7 +151,7 @@ class OneHotDecodingEnv(gym.Wrapper):
 class VecOneHotEncodingEnv(VecEnvWrapper):
     def __init__(self, venv, dim=6):
         VecEnvWrapper.__init__(self, venv)
-        self.dim = dim
+        self.dim = self.action_space.n
 
     def step(self, actions):
         return self.venv.step(one_hot(actions, self.dim))

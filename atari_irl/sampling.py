@@ -262,7 +262,7 @@ class PPOSample:
         def process_data(inpt):
             key, value = inpt
             if 'actions' in key:
-                return utils.one_hot(value.astype(np.int32), 6)
+                return utils.one_hot(value.astype(np.int32), self.sampler.env.action_space.n)
             elif 'observations' in key:
                 return obs_modifier(value, key=key, sample=self)
             else:

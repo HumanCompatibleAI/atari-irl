@@ -117,12 +117,12 @@ class DiscreteIRLPolicy(StochasticPolicy, Serializable):
         obs = np.array([observation])
         action, _, _, _ = self.act_model.step(obs)
         # TODO(Aaron) get the real dim
-        return one_hot(action, 6), dict(prob=self._f_dist(obs))
+        return one_hot(action, self.action_space.shape[0]), dict(prob=self._f_dist(obs))
 
     def _get_actions_right_shape(self, observations):
         actions, values, _, neglogpacs = self.act_model.step(observations)
         return (
-            one_hot(actions, 6),
+            one_hot(actions, self.action_space.shape[0]),
             dict(
                 prob=self._f_dist(observations),
                 values=values.reshape(self.num_envs, 1),

@@ -158,7 +158,7 @@ def sample_trajectories(*, model, environments, one_hot_code=False, n_trajectori
                 completed_trajectories.append({
                     'observations': np.array(observations[i]),
                     # TODO(Aaron): get the real dim
-                    'actions': one_hot(actions[i], 6) if one_hot_code else np.vstack(actions[i])
+                    'actions': one_hot(actions[i], environments.action_space.n) if one_hot_code else np.vstack(actions[i])
                 })
                 observations[i] = []
                 actions[i] = []
