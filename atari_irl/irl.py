@@ -1048,6 +1048,7 @@ class IRLRunner(IRLTRPO):
             
                 
             ppo_itr += 1
+            del batch
 
         return buffer, ppo_itr
 
