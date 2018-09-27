@@ -962,7 +962,7 @@ class IRLRunner(IRLTRPO):
             self.sampler.mean_length
         )
 
-        if itr % 20 == 0 and itr != 0:
+        if itr % 500 == 0 and itr != 0:
             logger.log("Saving snapshot...")
             params = self.get_itr_snapshot(itr)
             if self.store_paths:
