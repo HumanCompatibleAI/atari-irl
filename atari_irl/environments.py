@@ -520,11 +520,12 @@ gym.envs.register(
 
 env_mapping = {
     'PongNoFrameskip-v4': atari_modifiers,
+    'EnduroNoFrameskip-v4': atari_modifiers,
     'CartPole-v1': mujoco_modifiers,
     'VisionSays-v0': easy_env_modifiers,
     'SimonSays-v0': easy_env_modifiers,
     'PLEPong-v0': atari_modifiers,
     'PLEPongState-v0': no_modifiers,
     'PLECatcher-v0': atari_modifiers,
-    'PLECatcherState-v0': no_modifiers
+    'PLECatcherState-v0': no_modifiers,
 }
