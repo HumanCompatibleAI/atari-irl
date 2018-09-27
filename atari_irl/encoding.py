@@ -222,6 +222,13 @@ class VariationalAutoEncoder:
         tf.get_default_session().run(restores)
         return self
 
+class ScoreTrimmedVariationalAutoEncoder(VariationalAutoEncoder):
+    @staticmethod
+    def _check_obs(obs):
+        assert (obs >= 0).all()
+        assert (obs <= 255).all()
+        if not (obs[:, :10, :, :] == 87).all():
+            obs[:, :10, :, :] = 87
 
 class NextStepVariationalAutoEncoder(VariationalAutoEncoder):
     unk_mean = 0.0
