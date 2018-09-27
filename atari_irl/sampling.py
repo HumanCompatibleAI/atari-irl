@@ -308,6 +308,8 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
 
     def get_probabilities_for_obs(self, obs):
         tm = self.model.train_model
+        if obs.shape[1:] != self.env.observation_space.shape and self.env.venv.encoder:
+            obs = self.env.venv.encoder.base_vector(obs)
         return tf.get_default_session().run(
             tf.nn.softmax(tm.pd.logits),
             {tm.X: obs}

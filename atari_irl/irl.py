@@ -448,6 +448,10 @@ class AtariAIRL(AIRL):
                 obs[:, :, :42, :] *= 0
                 obs[:, 10:, :, :] *= 0
             if self.encoder and key:
+                # we're using an encoder wrapped environment, and have
+                # already transformed it
+                if len(obs.shape) == 2:
+                    return obs
                 assert sample
                 assert not self.drop_framestack
                 assert not self.only_show_scores
