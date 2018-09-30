@@ -307,7 +307,7 @@ class AtariAIRL(AIRL):
             encoder_loc=encoder_loc
         )
 
-        self.encoder = None if not encoder_loc else encoding.NextStepVariationalAutoEncoder.load(encoder_loc)
+        self.encoder = None if not encoder_loc else encoding.VariationalAutoEncoder.load(encoder_loc)
         self.encode_fn = None
         if self.encoder:
             if state_only:
