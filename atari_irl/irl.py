@@ -1043,7 +1043,6 @@ class IRLRunner(IRLTRPO):
 
         return ppo_itr
 
-    @profile
     def buffered_train(self):
         start_time = self._train_setup()
 
