@@ -1023,17 +1023,13 @@ class IRLRunner(IRLTRPO):
             train_itr = (itr > 0 or self.skip_discriminator) and i % self.policy_update_freq == 0
 
             if not self.skip_discriminator:
-                # Create a buffer if we don't have one
-                if buffer is None:
-                    buffer = sampling.PPOBatchBuffer(batch, self.buffer_batch_size)
-                    logger.log("Buffer initialized")
-
                 # overwrite the rewards with the IRL model
                 if self.irl_model_wt > 0.0:
                     #logger.log("Overwriting batch rewards...")
                     assert np.isclose(np.sum(batch.rewards), 0)
                     if train_itr:
-                        batch.rewards = self.irl_model.eval(batch, gamma=self.discount, itr=itr)
+                        batch.rewards *= 0
+                        batch.rewards += self.irl_model.eval(batch, gamma=self.discount, itr=itr)
                         logger.log(f"GCL Score Average: {np.mean(batch.rewards)}")
                         
                 buffer.add(batch)
@@ -1045,20 +1041,26 @@ class IRLRunner(IRLTRPO):
             ppo_itr += 1
             del batch
 
-        return buffer, ppo_itr
+        return ppo_itr
 
+    @profile
     def buffered_train(self):
         start_time = self._train_setup()
 
         ppo_itr = 0
         buffer = None
+        
+        if not self.skip_discriminator:
+            batch = self.obtain_samples(ppo_itr)
+            buffer = sampling.PPOBatchBuffer(batch, self.buffer_batch_size)
+            logger.log("Buffer initialized")
 
         for itr in range(self.start_itr, self.n_itr):
             itr_start_time = time.time()
             with logger.prefix('itr #%d | ' % itr):
                 logger.record_tabular('Itr', itr)
                 logger.log("Obtaining samples...")
-                buffer, ppo_itr = self.buffered_sample_train_policy(
+                ppo_itr = self.buffered_sample_train_policy(
                     itr, ppo_itr, buffer
                 )
 
@@ -1105,6 +1107,7 @@ def airl(
         with rllab_logdir(algo=algo, dirname=log_dir):
             print("Training!")
             algo.buffered_train()
+            #algo.train()
             # need to return these explicitly because they don't survive
             # across tensorflow sessions
             reward_params = irl_model.get_params()
