@@ -225,10 +225,9 @@ class PPOSample:
             return self.actions
         elif key == 'observations_next':
             if self.obs_next is None:
-                obs = self.obs
                 self.obs_next = np.r_[
-                    obs[1:],
-                    pad_val*np.expand_dims(np.ones_like(obs[0]), axis=0)
+                    self.obs[1:],
+                    pad_val*np.expand_dims(np.ones_like(self.obs[0]), axis=0)
                 ]
             return self.obs_next
         elif key == 'actions_next':

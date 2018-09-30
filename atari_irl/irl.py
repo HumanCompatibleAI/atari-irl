@@ -32,6 +32,8 @@ import joblib
 import time
 from collections import defaultdict, namedtuple
 
+from memory_profiler import profile
+
 
 class DiscreteIRLPolicy(StochasticPolicy, Serializable):
     """
@@ -471,6 +473,7 @@ class AtariAIRL(AIRL):
         score = score[:, 0]
         return np.clip((score - self.score_mean) / self.score_std, -3, 3), score
 
+    @profile
     @overrides
     def fit(self, paths, policy=None, batch_size=256, logger=None, lr=1e-3, itr=0, **kwargs):
         if isinstance(self.expert_trajs[0], dict):
@@ -523,19 +526,13 @@ class AtariAIRL(AIRL):
             # Build feed dict
             labels = np.zeros((batch_size*2, 1))
             labels[batch_size:] = 1.0
-            obs_batch = np.concatenate([obs_batch, expert_obs_batch], axis=0)
-            nobs_batch = np.concatenate([nobs_batch, nexpert_obs_batch], axis=0)
-            act_batch = np.concatenate([act_batch, expert_act_batch], axis=0)
-            nact_batch = np.concatenate([nact_batch, nexpert_act_batch], axis=0)
-            lprobs_batch = np.expand_dims(np.concatenate([lprobs_batch, expert_lprobs_batch], axis=0), axis=1).astype(np.float32)
-
             feed_dict = {
-                self.act_t: act_batch,
-                self.obs_t: obs_batch,
-                self.nobs_t: nobs_batch,
-                self.nact_t: nact_batch,
+                self.act_t: np.concatenate([act_batch, expert_act_batch], axis=0),
+                self.obs_t: np.concatenate([obs_batch, expert_obs_batch], axis=0),
+                self.nobs_t: np.concatenate([nobs_batch, nexpert_obs_batch], axis=0),
+                self.nact_t: np.concatenate([nact_batch, nexpert_act_batch], axis=0),
                 self.labels: labels,
-                self.lprobs: lprobs_batch,
+                self.lprobs: np.expand_dims(np.concatenate([lprobs_batch, expert_lprobs_batch], axis=0), axis=1).astype(np.float32),
                 self.lr: lr
             }
 
@@ -561,6 +558,21 @@ class AtariAIRL(AIRL):
                 print('\tAccuracy:%f' % mean_acc)
                 mean_score = it.pop_mean('avg_score')
                 
+        del obs
+        del obs_next
+        del acts
+        del acts_next
+        del path_probs
+        
+        del nobs_batch
+        del obs_batch
+        del nact_batch
+        del act_batch
+        del lprobs_batch 
+        
+        
+        import gc
+        gc.collect()
 
         if logger:
             logger.record_tabular('GCLDiscrimLoss', mean_loss)
@@ -574,6 +586,7 @@ class AtariAIRL(AIRL):
         
         return mean_loss
 
+    @profile
     @overrides
     def eval(self, samples, show_grad=False, **kwargs):
         """
@@ -595,7 +608,12 @@ class AtariAIRL(AIRL):
                 }
             )
             score, _ = self._process_discrim_output(scores)
-            
+            del obs
+            del obs_next
+            del acts
+            del path_probs
+            import gc
+            gc.collect()
         else:
             obs, acts = samples.extract_paths(
                 ('observations', 'actions'), obs_modifier=self.modify_obs
@@ -901,10 +919,12 @@ class IRLRunner(IRLTRPO):
     def obtain_samples(self, itr):
         return super(IRLRunner, self).obtain_samples(itr)
 
+    @profile
     @overrides
     def optimize_policy(self, itr, samples):
         self.optimizer.optimize_policy(itr, samples)
 
+    @profile
     @overrides
     def compute_irl(self, samples, itr=0):
         if self.no_reward:
@@ -1015,6 +1035,7 @@ class IRLRunner(IRLTRPO):
                 itr_start_time=itr_start_time
             )
 
+    @profile
     def buffered_sample_train_policy(self, itr, ppo_itr, buffer):
         for i in range(self.buffer_batch_size):
             batch = self.obtain_samples(ppo_itr)
