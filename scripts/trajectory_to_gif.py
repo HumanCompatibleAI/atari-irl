@@ -4,15 +4,17 @@ from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
 
 def make_gif(traj, fname, title=''):
-    fig, ax = plt.subplots(figsize=(4, 4))
+    fig, ax = plt.subplots(figsize=(2, 2))
 
     def update(i):
+        if i % 20 == 0:
+            print(i)
         im_normed = traj[i]
         ax.imshow(im_normed)
         ax.set_title(title, fontsize=20)
         ax.set_axis_off()
 
-    anim = FuncAnimation(fig, update, frames=np.arange(0, len(traj)), interval=50)
+    anim = FuncAnimation(fig, update, frames=np.arange(0, 1000), interval=50)
     anim.save(fname, dpi=80, writer='imagemagick')
     plt.close()
     
