@@ -86,12 +86,12 @@ class Cloner:
         )
         return actions, neglogps, logits
     
-    def train(self, *, obs, act, lr=1e-4, batch_size=1024):
+    def train(self, *, obs, act, lr=1e-4, batch_size=1024, epochs=500):
         T = obs.shape[0]
         n_batches = (T // batch_size) - 1
         print(f"Splitting {T} timesteps into {n_batches} batches")
         
-        for e in range(500):
+        for e in range(epochs):
             order = np.random.permutation(T)
             obs = obs[order]
             act = act[order]
@@ -100,7 +100,7 @@ class Cloner:
             for b in range((T // batch_size) - 1):
                 lr *= .9995
                 s = slice(batch_size*b, batch_size*(b+1))
-                loss = clone.train_step(lr=lr, obs=obs[s], act=act[s])
+                loss = self.train_step(lr=lr, obs=obs[s], act=act[s])
                 if b % 50 == 0:
                     print(f"Epoch {e} batch {b}: {loss}")
                 losses.append(loss)
