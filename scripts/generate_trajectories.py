@@ -1,4 +1,4 @@
-from atari_irl import utils, policies, environments, irl, training, sampling
+from atari_irl import utils, policies, environments, irl, training, sampling, behavioral_cloning
 import pickle
 from arguments import add_atari_args, add_trajectory_args, add_expert_args, tf_context_for_args, env_context_for_args
 import argparse
@@ -50,6 +50,9 @@ def generate_trajectories(args):
                 )
 
                 model = irl_policy.model
+                envs = context.environments
+            elif args.expert_type == 'clone':
+                model = behavioral_cloning.Cloner.load(args.expert_path)
                 envs = context.environments
             else:
                 raise NotImplementedError

@@ -45,7 +45,7 @@ def add_expert_args(parser):
     parser.add_argument(
         '--expert_type',
         help='type of the expert',
-        choices=['baselines_ppo', 'irl'],
+        choices=['baselines_ppo', 'irl', 'clone'],
         default='baselines_ppo'
     )
 
