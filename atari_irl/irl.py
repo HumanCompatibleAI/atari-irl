@@ -962,7 +962,7 @@ class IRLRunner(IRLTRPO):
             self.sampler.mean_length
         )
 
-        if itr % 500 == 0 and itr != 0:
+        if itr % 10 == 0 and itr != 0:
             logger.log("Saving snapshot...")
             params = self.get_itr_snapshot(itr)
             if self.store_paths:
@@ -1027,7 +1027,7 @@ class IRLRunner(IRLTRPO):
                 if self.irl_model_wt > 0.0:
                     #logger.log("Overwriting batch rewards...")
                     assert np.isclose(np.sum(batch.rewards), 0)
-                    if train_itr:
+                    if not self.skip_policy_update and train_itr:
                         batch.rewards *= 0
                         batch.rewards += self.irl_model.eval(batch, gamma=self.discount, itr=itr)
                         logger.log(f"GCL Score Average: {np.mean(batch.rewards)}")
