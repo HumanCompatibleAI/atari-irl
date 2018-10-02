@@ -205,7 +205,7 @@ class VariationalAutoEncoder:
         for i in range(len(img)):
             if np.random.random() < disp_p:
                 full_img.append(np.hstack([img[i], obs[i, :, :, -1]]))
-        return np.vstack(full_img)
+        return np.vstack(full_img), np.mean((img[i] - obs[i, :, :, -1]) ** 2)
 
     def save(self, save_path):
         ps = tf.get_default_session().run(self.params)
