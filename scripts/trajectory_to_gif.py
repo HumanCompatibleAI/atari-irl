@@ -2,6 +2,7 @@ import numpy as np
 import pickle
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
+import argparse
 
 def make_gif(traj, fname, title=''):
     fig, ax = plt.subplots(figsize=(2, 2))
@@ -14,7 +15,7 @@ def make_gif(traj, fname, title=''):
         ax.set_title(title, fontsize=20)
         ax.set_axis_off()
 
-    anim = FuncAnimation(fig, update, frames=np.arange(0, 1000), interval=50)
+    anim = FuncAnimation(fig, update, frames=np.arange(0, min(1000, len(traj))), interval=50)
     anim.save(fname, dpi=80, writer='imagemagick')
     plt.close()
     
@@ -32,4 +33,4 @@ if __name__ == '__main__':
     
     ts = pickle.load(open(args.trajectories_file, 'rb'))
     
-    make_gif(ts[0], args.output_file, args.title)
+    make_gif(ts[0]['observations'], args.output_file, args.title)
