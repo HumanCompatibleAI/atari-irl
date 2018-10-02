@@ -53,9 +53,6 @@ def train_airl(args):
         ablation=args.ablation
     )
 
-    pickle.dump(policy_params, open(args.irl_policy_file, 'wb'))
-    pickle.dump(reward, open(args.irl_reward_file, 'wb'))
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
