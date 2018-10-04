@@ -8,9 +8,17 @@ from baselines.common.vec_env.vec_normalize import VecNormalize
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.atari_wrappers import NoopResetEnv, MaxAndSkipEnv, wrap_deepmind
 from gym.spaces.discrete import Discrete
+from gym import spaces
 from sandbox.rocky.tf.spaces import Box
 import gym
-from atari_irl.utils import one_hot
+import ple
+
+def one_hot(x, dim):
+    assert isinstance(x, list) or len(x.shape) == 1
+    ans = np.zeros((len(x), dim))
+    for n, i in enumerate(x):
+        ans[n, i] = 1
+    return ans
 
 def vec_normalize(env):
     return VecNormalize(env)
@@ -63,7 +71,7 @@ class TimeLimitEnv(gym.Wrapper):
 class VecRewardZeroingEnv(VecEnvWrapper):
     def step(self, actions):
         _1, reward, _2, _3 = self.venv.step(actions)
-        return _1, 0, _2, _3
+        return _1, np.zeros((_1.shape[0],)), _2, _3
 
     def reset(self):
         return self.venv.reset()
@@ -107,6 +115,29 @@ class VecIRLRewardEnv(VecEnvWrapper):
 
     def step_wait(self):
         self.venv.step_wait()
+        
+
+class EncoderWrappedEnv(VecEnvWrapper):
+    def __init__(self, env, *, encoder):
+        VecEnvWrapper.__init__(self, env)
+        self.encoder = encoder
+        self.observation_space = spaces.Box(
+            shape=(self.encoder.d_embedding,),
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max
+        )
+        print("Wrapping with encoder")
+        
+    def step(self, acts):
+        obs, rewards, done, info = self.venv.step(acts)
+        obs = self.encoder.base_vector(obs)
+        return obs, rewards, done, info
+    
+    def reset(self):
+        return self.encoder.base_vector(self.venv.reset())
+    
+    def step_wait(self):
+        self.venv.step_wait()
 
 
 class OneHotDecodingEnv(gym.Wrapper):
@@ -120,7 +151,7 @@ class OneHotDecodingEnv(gym.Wrapper):
 class VecOneHotEncodingEnv(VecEnvWrapper):
     def __init__(self, venv, dim=6):
         VecEnvWrapper.__init__(self, venv)
-        self.dim = dim
+        self.dim = self.action_space.n
 
     def step(self, actions):
         return self.venv.step(one_hot(actions, self.dim))
@@ -369,6 +400,83 @@ class VisionSaysEnvironment(SimonSaysEnvironment):
         }
 
 
+def state_preprocessor(d):
+    return np.array([d[key] for key in sorted(d.keys())])
+
+
+def make_ple_game(game_class, obs_type):
+    class PLEGame(gym.Env):
+        def __init__(self):
+            super().__init__()
+            self.ple = ple.PLE(
+                game_class(),
+                state_preprocessor=state_preprocessor,
+                display_screen=False
+            )
+
+            self.ple.init()
+
+            self.reward_range = (
+                min(self.ple.game.rewards.values()),
+                max(self.ple.game.rewards.values())
+            )
+
+            self.obs_type = obs_type
+            if self.obs_type == 'rgb':
+                self.get_obs = self.ple.getScreenRGB
+                self.observation_space = gym.spaces.Box(
+                    low=0, high=255, shape=(*self.ple.getScreenDims(), 3)
+                )
+            elif self.obs_type == 'state_vector':
+                self.get_obs = self.ple.getGameState
+                self.observation_space = gym.spaces.Box(
+                    low=-1000, high=1000, shape=self.get_obs().shape, dtype=np.float64
+                )
+            else:
+                assert False, "obs_type must be rgb or state_vector"
+
+            self.action_space = gym.spaces.Discrete(6)
+            assert len(self.ple.getActionSet()) < 6
+            self._actions = self.ple.getActionSet()
+            self._actions += [
+                None for _ in range(6 - len(self._actions))
+            ]
+            self._action_mapping = self.ple.game.actions
+            self._action_mapping['NOOP'] = None
+
+            self.ale = self.ple
+            self.np_random = np.random.RandomState(0)
+
+        def seed(self, seed=None):
+            self.ple.rng.seed(seed)
+            self.np_random.seed(seed)
+
+        def is_done(self):
+            return self.ple.game_over()
+
+        def step(self, action):
+            reward = self.ple.act( self._actions[action])
+
+            return self.get_obs(), reward, self.is_done(), self.ple.game.getGameState()
+
+        def reset(self):
+            self.ple.reset_game()
+            return self.get_obs()
+
+        def render(self, *args):
+            return self.ple.getScreenRGB()
+
+        def get_action_meanings(self):
+            reverse_dict = dict(zip(
+                self._action_mapping.values(),
+                self._action_mapping.keys()
+            ))
+            ans = [reverse_dict[a] for a in self._actions]
+            ans[0] = 'NOOP'
+            return ans
+
+    return PLEGame
+
 gym.envs.register(
     id='VisionSays-v0',
     entry_point='atari_irl.environments:VisionSaysEnvironment'
@@ -379,9 +487,45 @@ gym.envs.register(
     entry_point='atari_irl.environments:SimonSaysEnvironment'
 )
 
+no_modifiers = {
+    'env_modifiers': [],
+    'vec_env_modifiers': []
+}
+
+PLEPong = make_ple_game(ple.games.pong.Pong, 'rgb')
+PLEPongState = make_ple_game(ple.games.pong.Pong, 'state_vector')
+PLECatcher = make_ple_game(ple.games.catcher.Catcher, 'rgb')
+PLECatcherState = make_ple_game(ple.games.catcher.Catcher, 'state_vector')
+
+gym.envs.register(
+    id='PLEPong-v0',
+    entry_point='atari_irl.environments:PLEPong'
+)
+
+gym.envs.register(
+    id='PLEPongState-v0',
+    entry_point='atari_irl.environments:PLEPongState'
+)
+
+gym.envs.register(
+    id='PLECatcher-v0',
+    entry_point='atari_irl.environments:PLECatcher'
+)
+
+gym.envs.register(
+    id='PLECatcherState-v0',
+    entry_point='atari_irl.environments:PLECatcherState'
+)
+
+
 env_mapping = {
     'PongNoFrameskip-v4': atari_modifiers,
+    'EnduroNoFrameskip-v4': atari_modifiers,
     'CartPole-v1': mujoco_modifiers,
     'VisionSays-v0': easy_env_modifiers,
-    'SimonSays-v0': easy_env_modifiers
+    'SimonSays-v0': easy_env_modifiers,
+    'PLEPong-v0': atari_modifiers,
+    'PLEPongState-v0': no_modifiers,
+    'PLECatcher-v0': atari_modifiers,
+    'PLECatcherState-v0': no_modifiers,
 }

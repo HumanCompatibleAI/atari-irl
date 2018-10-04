@@ -6,7 +6,7 @@ from baselines.ppo2.ppo2 import safemean
 from baselines.ppo2 import ppo2
 
 from . import policies
-from .sampling import PPOBatchSampler
+from .sampling import PPOBatchSampler, DummyAlgo
 from .optimizers import PPOOptimizer, make_batching_config
 
 from collections import deque, namedtuple
@@ -135,19 +135,19 @@ class Learner:
             ob_space=ob_space, ac_space=ac_space, save_env=save_env
         )
 
-        model = policy.model
-        sampler = PPOBatchSampler(env=env, model=model, nsteps=nsteps)
+        sampler = PPOBatchSampler(DummyAlgo(policy), baselines_venv=env, nsteps=nsteps)
         optimizer = PPOOptimizer(
-            policy=policy, batching_config=batching_config,
+            batching_config=batching_config,
             lr=lr, cliprange=cliprange, total_timesteps=total_timesteps
         )
+        optimizer.update_opt(policy)
 
         self.gamma = gamma
         self.lam = lam
 
         # Set our major learner objects
         self.policy = policy
-        self.model  = model
+        self.model  = policy.model
         self.sampler = sampler
         self.optimizer = optimizer
 
@@ -170,7 +170,7 @@ class Learner:
 
     def obtain_samples(self, itr):
         # Run the model on the environments
-        self._run_info = self.sampler.run().to_ppo_batch(gamma=self.gamma, lam=self.lam)
+        self._run_info = self.sampler.run()#.to_ppo_batch()
         self._epinfobuf.extend(self._run_info.epinfos)
         self._itr = itr
 

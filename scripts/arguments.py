@@ -45,7 +45,7 @@ def add_expert_args(parser):
     parser.add_argument(
         '--expert_type',
         help='type of the expert',
-        choices=['baselines_ppo', 'irl'],
+        choices=['baselines_ppo', 'irl', 'clone'],
         default='baselines_ppo'
     )
 
@@ -89,8 +89,30 @@ def add_irl_args(parser):
         help='location to initialize training from',
         type=str, default='none'
     )
+    parser.add_argument(
+        '--encoder',
+        help='encoder location',
+        type=str, default=''
+    )
+    parser.add_argument(
+        '--discriminator_itrs',
+        help='number of iterations for discriminator',
+        type=int, default=100
+    )
+    parser.add_argument(
+        '--ppo_itrs_in_batch',
+        help='number of PPO steps in batch',
+        type=int, default=16
+    )
+    parser.add_argument(
+        '--policy_update_freq',
+        help='how frequently to update the PPO policy while doing batched sampling',
+        type=int, default=4
+    )
+    parser.add_argument('--reward_type', default='cnn')
     add_bool_feature(parser, 'state_only', default=False)
     add_bool_feature(parser, 'drop_discriminator_framestack', default=False)
+    add_bool_feature(parser, 'only_show_discriminator_scores', default=False)
 
 
 def env_context_for_args(args):

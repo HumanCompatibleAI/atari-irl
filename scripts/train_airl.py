@@ -4,6 +4,9 @@ import argparse
 from baselines import logger
 import tensorflow as tf
 import pickle
+import joblib
+from baselines.ppo2.policies import CnnPolicy, MlpPolicy
+from atari_irl.irl import cnn_net, mlp_net
 
 
 def train_airl(args):
@@ -23,7 +26,9 @@ def train_airl(args):
         training_cfg={
             'n_itr': args.n_iter,
             'batch_size': args.batch_size,
-            'entropy_weight': args.entropy_wt
+            'entropy_weight': args.entropy_wt,
+            'buffer_batch_size': args.ppo_itrs_in_batch,
+            'policy_update_freq': args.policy_update_freq
         },
         env_config={
             'env_name': args.env,
@@ -32,18 +37,21 @@ def train_airl(args):
             'one_hot_code': args.one_hot_code
         },
         policy_cfg={
-            'init_location': None if args.init_location == 'none' else args.init_location
+            'init_location': None if args.init_location == 'none' else args.init_location,
+            'policy_model': CnnPolicy if args.policy_type == 'cnn' else MlpPolicy
         },
         reward_model_cfg={
-            'expert_trajs': pickle.load(open(args.trajectories_file, 'rb')),
+            'expert_trajs': joblib.load(open(args.trajectories_file, 'rb')),
             'state_only': args.state_only,
-            'drop_framestack': args.drop_discriminator_framestack
+            'drop_framestack': args.drop_discriminator_framestack,
+            'only_show_scores': args.only_show_discriminator_scores,
+            'reward_arch': cnn_net if args.reward_type == 'cnn' else mlp_net,
+            'value_fn_arch': cnn_net if args.reward_type == 'cnn' else mlp_net,
+            'encoder_loc': None if not args.encoder else args.encoder,
+            'max_itrs': args.discriminator_itrs
         },
         ablation=args.ablation
     )
-
-    pickle.dump(policy_params, open(args.irl_policy_file, 'wb'))
-    pickle.dump(reward, open(args.irl_reward_file, 'wb'))
 
 
 if __name__ == '__main__':

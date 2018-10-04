@@ -95,6 +95,7 @@ class Trajectories:
         if self.ppo_sample is not None:
             return self.ppo_sample
 
+
 class PPOSample:
     """
     A trajectory slice generated according to the PPO batch logic.
@@ -109,6 +110,7 @@ class PPOSample:
     ):
         self.obs = np.asarray(obs)
         self.rewards = np.asarray(rewards)
+        self.returns = rewards # match PPOBatch
         self.actions = np.asarray(actions)
         self.values = np.asarray(values)
         self.dones = np.asarray(dones)
@@ -126,9 +128,34 @@ class PPOSample:
         self.train_batch_size = self.sampler.model.train_model.X.shape[0].value
         assert self.sample_batch_size % self.train_batch_size == 0
 
+        self.obs_next = None
+        self.actions_next = None
+
         self.probabilities = self._get_sample_probabilities()
 
-    def to_ppo_batch(self) -> PPOBatch:
+    def to_ppo_batches(self, batch_size):
+        all_data = self.sampler.process_to_ppo_batch(
+            self, gamma=self.sampler.gamma, lam=self.sampler.lam
+        )
+        if all_data.states is not None:
+            raise NotImplemented
+
+        N = all_data.obs.shape[0]
+        assert N % batch_size == 0
+        for start in range(0, N, batch_size):
+            end = start + batch_size
+            yield PPOBatch(
+                all_data.obs[start:end],
+                all_data.returns[start:end],
+                all_data.masks[start:end],
+                all_data.actions[start:end],
+                all_data.values[start:end],
+                all_data.neglogpacs[start:end],
+                None,
+                None
+            )
+
+    def to_ppo_batch(self):
         return self.sampler.process_to_ppo_batch(
             self, gamma=self.sampler.gamma, lam=self.sampler.lam
         )
@@ -191,11 +218,67 @@ class PPOSample:
 
         return Trajectories(buffer, self)
 
+    def get_path_key(self, key, pad_val=0.0):
+        if key == 'observations':
+            return self.obs
+        elif key == 'actions':
+            return self.actions
+        elif key == 'observations_next':
+            if self.obs_next is None:
+                obs = self.obs
+                self.obs_next = np.r_[
+                    obs[1:],
+                    pad_val*np.expand_dims(np.ones_like(obs[0]), axis=0)
+                ]
+            return self.obs_next
+        elif key == 'actions_next':
+            if self.actions_next is None:
+                self.actions_next = np.r_[
+                    self.actions[1:],
+                    pad_val*np.expand_dims(np.ones_like(self.actions[0]), axis=0)
+                ]
+            return self.actions_next
+        elif key == 'a_logprobs':
+            """
+            alogprobs = self.sampler.get_a_logprobs(
+                ppo2.sf01(self.obs),
+                utils.one_hot(ppo2.sf01(self.actions).astype(np.int32), 6)
+            )
+            assert np.isclose(
+                ppo2.sf01(-1 * self.neglogpacs),
+                alogprobs
+            ).all()
+            """
+            return -1 * self.neglogpacs
+        else:
+            raise NotImplementedError
+
+    def extract_paths(self, keys, obs_modifier=lambda obs, *args: obs):
+        data = [
+            ppo2.sf01(self.get_path_key(key))
+            for key in keys
+        ]
+
+        def process_data(inpt):
+            key, value = inpt
+            if 'actions' in key:
+                return utils.one_hot(value.astype(np.int32), self.sampler.env.action_space.n)
+            elif 'observations' in key:
+                return obs_modifier(value, key=key, sample=self)
+            else:
+                return value
+        return map(process_data, zip(keys, data))
+
+
+class DummyAlgo:
+    def __init__(self, policy):
+        self.policy = policy
+
 
 class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
     # If you want to use the baselines PPO sampler as a sampler for the
     # airl interfaced code, use this.
-    def __init__(self, algo, *, nsteps, baselines_venv, gamma, lam):
+    def __init__(self, algo, *, nsteps, baselines_venv, gamma=0.99, lam=0.95):
         model = algo.policy.model
         env = baselines_venv
         # The biggest weird thing about this piece of code is that it does a
@@ -225,10 +308,22 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
 
     def get_probabilities_for_obs(self, obs):
         tm = self.model.train_model
+        if obs.shape[1:] != self.env.observation_space.shape and self.env.venv.encoder:
+            obs = self.env.venv.encoder.base_vector(obs)
         return tf.get_default_session().run(
             tf.nn.softmax(tm.pd.logits),
             {tm.X: obs}
         )
+
+    def get_a_logprobs(self, obs, acts):
+        probs = utils.batched_call(
+            # needs to be a tuple for the batched call to work
+            lambda obs: (self.get_probabilities_for_obs(obs),),
+            self.model.train_model.X.shape[0].value,
+            (obs, ),
+            check_safety=False
+        )[0]
+        return np.log((probs * acts).sum(axis=1))
 
     def _sample(self) -> PPOSample:
         mb_obs, mb_rewards, mb_actions, mb_values, mb_dones, mb_neglogpacs = [],[],[],[],[],[]
@@ -266,6 +361,7 @@ class PPOBatchSampler(BaseSampler, ppo2.AbstractEnvRunner):
 
             mb_rewards.append(rewards)
 
+        self._epinfobuf.extend(epinfos)
         return PPOSample(
             mb_obs, mb_rewards, mb_actions, mb_values, mb_dones,
             mb_neglogpacs, mb_states, epinfos, self
@@ -396,3 +492,60 @@ class FullTrajectorySampler(VectorizedSampler):
         return PPOBatch(
             *([data[:512] for data in samples_data[:-2]] + [None, None])
         )
+
+
+class PPOBatchBuffer(PPOSample):
+    def __init__(self, ppo_sample, n_batches):
+        self.n_batches = n_batches
+        self.cur_idx = 0
+
+        T = ppo_sample.obs.shape[0]
+        assert ppo_sample.rewards.shape[0] == T
+        assert ppo_sample.actions.shape[0] == T
+        assert ppo_sample.values.shape[0] == T
+        assert ppo_sample.dones.shape[0] == T
+        assert ppo_sample.neglogpacs.shape[0] == T
+
+        self.batch_T = T
+
+        def fix_shape(shape):
+            return (self.batch_T * self.n_batches, ) + shape[1:]
+
+        super().__init__(
+            np.zeros(fix_shape(ppo_sample.obs.shape)),
+            np.zeros(fix_shape(ppo_sample.rewards.shape)),
+            np.zeros(fix_shape(ppo_sample.actions.shape)),
+            np.zeros(fix_shape(ppo_sample.values.shape)),
+            np.zeros(fix_shape(ppo_sample.dones.shape)),
+            np.zeros(fix_shape(ppo_sample.neglogpacs.shape)),
+            None,
+            None,
+            ppo_sample.sampler
+        )
+
+    def add(self, sample):
+        if self.cur_idx >= self.n_batches * self.batch_T:
+            self.cur_idx = 0
+
+        for key in ['obs', 'rewards', 'actions', 'values', 'dones', 'neglogpacs']:
+            s = slice(self.cur_idx, self.cur_idx + self.batch_T)
+            getattr(self, key)[s] = getattr(sample, key)
+
+        self.cur_idx += self.batch_T
+        
+    def to_ppo_batches(self, batch_size):
+        for start in range(0, self.batch_T * self.n_batches, batch_size):
+            end = start + batch_size
+            s = slice(start, end)
+            
+            yield self.sampler._process_ppo_samples(
+                obs=self.obs[s],
+                rewards=self.rewards[s],
+                actions=self.actions[s],
+                values=self.values[s],
+                dones=self.dones[s],
+                neglogpacs=self.neglogpacs[s],
+                states=None, epinfos=None,
+                gamma=self.sampler.gamma,
+                lam=self.sampler.lam
+            )
