@@ -221,34 +221,25 @@ def batch_norm(x, name):
    
     
 def dcgan_cnn(unscaled_images, **conv_kwargs):
-    """
-    CNN from Nature paper.
-    """
     scaled_images = tf.cast(unscaled_images, tf.float32) / 255.
     activ = lambda name, inpt: tf.nn.leaky_relu(batch_norm(inpt, name))
     h = activ('l1', conv(scaled_images, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2), **conv_kwargs))
     h2 = activ('l2', conv(h, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
     h3 = activ('l3', conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
     h3 = conv_to_fc(h3)
-    return h3
+    return 
 
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
-    #h = nature_cnn(x, **conv_kwargs)
     h = dcgan_cnn(x, **conv_kwargs)
+    activ = lambda name, inpt: tf.nn.leaky_relu(batch_norm(inpt, name))
+    
     if actions is not None:
         assert dout == 1
-        action_size = actions.get_shape()[1].value
-        print(actions.get_shape())
-        selection = fc(h, 'action_selection', nh=action_size, init_scale=np.sqrt(2))
-
-        h = tf.concat([
-            tf.multiply(actions, selection),
-            actions,
-            h
-        ], axis=1)
-    output = fc(h, 'output', nh=dout, init_scale=np.sqrt(2))
-    return output
+        h = tf.concat([actions, h], axis=1)
+    
+    h_final = activ(fc(h3, 'fc1', nh=512, init_scale=np.sqrt(2)))
+    return fc(h_final, 'output', nh=dout, init_scale=np.sqrt(2))
 
 def mlp_net(x, layers=2, actions=None, dout=1):
     if actions is not None:
