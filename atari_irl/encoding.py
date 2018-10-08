@@ -27,7 +27,8 @@ def dcgan_cnn(images, dout, **conv_kwargs):
     l1 = activ('l1', conv(images, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2), **conv_kwargs))
     l2 = activ('l2', conv(l1, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
     l3 = activ('l3', conv(l2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
-    out = fc(conv_to_fc(l3), nh=dout, scope='final')
+    h = fc(conv_to_fc(l3), nh=512, scope='final')
+    out = activ(fc(h, 'fc1', nh=dout, init_scale=np.sqrt(2)))
     return out, l3.shape
 
 
