@@ -102,12 +102,12 @@ def add_irl_args(parser):
     parser.add_argument(
         '--ppo_itrs_in_batch',
         help='number of PPO steps in batch',
-        type=int, default=16
+        type=int, default=1
     )
     parser.add_argument(
         '--policy_update_freq',
         help='how frequently to update the PPO policy while doing batched sampling',
-        type=int, default=4
+        type=int, default=1
     )
     parser.add_argument('--reward_type', default='cnn')
     add_bool_feature(parser, 'state_only', default=False)
