@@ -44,12 +44,12 @@ def decoder_cnn(embedding, start_conv_shape, dclasses):
 class NormalAutoEncoder:
     unk_mean = 255.0 / 2
     
-    @staticmethod
-    def _check_obs(obs):
+    def _check_obs(self, obs):
         assert (obs >= 0).all()
         assert (obs <= 255).all()
-        if not (obs[:, :10, :, :] == 87).all():
-            obs[:, :10, :, :] = 87
+        if self.trim_score:
+            if not (obs[:, :10, :, :] == 87).all():
+                obs[:, :10, :, :] = 87
 
     @staticmethod
     def _process_obs_tensor(obs):
@@ -68,20 +68,23 @@ class NormalAutoEncoder:
             embedding_weight=0.01,
             obs_dtype=tf.int16,
             d_classes=0,
+            trim_score=False,
             **conv_kwargs
     ):
         self.kwargs = {
             'obs_shape': obs_shape,
             'd_embedding': d_embedding,
             'embedding_weight': embedding_weight,
-            'obs_dtype': tf.int32
+            'obs_dtype': tf.int32,
+            'trim_score': trim_score
         }
         self.obs_dtype = obs_dtype
         self.obs_shape = obs_shape
         self.d_embedding = d_embedding
         self.embedding_weight = embedding_weight
         self.obs_dtype = obs_dtype
-
+        self.trim_score = trim_score
+        
         with tf.variable_scope('autoencoder') as scope:
             with tf.variable_scope('encoder') as _es:
                 self.obs_t = tf.placeholder(self.obs_dtype, list((None,) + self.obs_shape), name='obs')
