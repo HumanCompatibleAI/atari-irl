@@ -237,7 +237,7 @@ def cnn_net(x, actions=None, dout=1, **conv_kwargs):
         assert dout == 1
         h = tf.concat([actions, h], axis=1)
     
-    h_final = activ(fc(h, 'fc1', nh=512, init_scale=np.sqrt(2)))
+    h_final = activ('h_final', fc(h, 'fc1', nh=512, init_scale=np.sqrt(2)))
     return fc(h_final, 'output', nh=dout, init_scale=np.sqrt(2))
 
 def mlp_net(x, layers=2, actions=None, dout=1):
