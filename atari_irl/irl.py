@@ -226,8 +226,7 @@ def dcgan_cnn(unscaled_images, **conv_kwargs):
     h = activ('l1', conv(scaled_images, 'c1', nf=32, rf=8, stride=4, init_scale=np.sqrt(2), **conv_kwargs))
     h2 = activ('l2', conv(h, 'c2', nf=64, rf=4, stride=2, init_scale=np.sqrt(2), **conv_kwargs))
     h3 = activ('l3', conv(h2, 'c3', nf=64, rf=3, stride=1, init_scale=np.sqrt(2), **conv_kwargs))
-    h3 = conv_to_fc(h3)
-    return 
+    return conv_to_fc(h3)
 
 
 def cnn_net(x, actions=None, dout=1, **conv_kwargs):
@@ -238,7 +237,7 @@ def cnn_net(x, actions=None, dout=1, **conv_kwargs):
         assert dout == 1
         h = tf.concat([actions, h], axis=1)
     
-    h_final = activ(fc(h3, 'fc1', nh=512, init_scale=np.sqrt(2)))
+    h_final = activ(fc(h, 'fc1', nh=512, init_scale=np.sqrt(2)))
     return fc(h_final, 'output', nh=dout, init_scale=np.sqrt(2))
 
 def mlp_net(x, layers=2, actions=None, dout=1):

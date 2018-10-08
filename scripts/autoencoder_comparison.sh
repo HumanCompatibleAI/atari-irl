@@ -18,8 +18,8 @@ case $ENVSHORT in
 esac;
 
 mkdir workshop/autoencoder/$OUT_DIR;
-echo "Placing results in workshop/autoencoder/$OUT_DIR"
+echo "Placing results in workshop/autoencoder/$OUT_DIR";
 
-eval "python train_ae.py --env $ENV --seed $SEED --encoder_type $ENCODER > workshop/autoencoder/$OUT_DIR/$ENVSHORT_$ENCODER.txt&";
+eval "python train_ae.py --env $ENV --seed $SEED --encoder_type $ENCODER > workshop/autoencoder/$OUT_DIR/$ENVSHORT\_$ENCODER.txt&";
 ENCODER='non_pixel_class'; # score trimming for pong is handled by the train_ae script
-eval "python train_ae.py --env $ENV --seed $SEED --encoder_type $ENCODER > workshop/autoencoder/$OUT_DIR/$ENVSHORT_$ENCODER.txt&";
+eval "python train_ae.py --env $ENV --seed $SEED --encoder_type $ENCODER > workshop/autoencoder/$OUT_DIR/$ENVSHORT\_$ENCODER.txt&";
