@@ -12,6 +12,7 @@ from gym import spaces
 from sandbox.rocky.tf.spaces import Box
 import gym
 import ple
+import os
 
 def one_hot(x, dim):
     assert isinstance(x, list) or len(x.shape) == 1
@@ -407,6 +408,8 @@ def state_preprocessor(d):
 def make_ple_game(game_class, obs_type):
     class PLEGame(gym.Env):
         def __init__(self):
+            os.putenv('SDL_VIDEODRIVER', 'fbcon')
+            os.environ["SDL_VIDEODRIVER"] = "dummy"
             super().__init__()
             self.ple = ple.PLE(
                 game_class(),
