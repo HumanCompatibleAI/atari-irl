@@ -61,6 +61,18 @@ class Policy:
         return policy
 
 
+class RandomPolicy(Policy):
+    """
+    Take random actions from a given action space.
+    """
+
+    def __init__(self, action_space):
+        self.action_space = action_space
+
+    def step(self, obs):
+        acts = [self.action_space.sample() for ob in obs]
+        return acts, None, None, None
+
 class EnvPolicy(Policy):
     """
     Lets us save and restore a policy where the policy depends on some sort of

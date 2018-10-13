@@ -54,6 +54,9 @@ def generate_trajectories(args):
             elif args.expert_type == 'clone':
                 model = behavioral_cloning.Cloner.load(args.expert_path)
                 envs = context.environments
+            elif args.expert_type == 'random':
+                envs = context.environments
+                model = policies.RandomPolicy(envs.action_space)
             else:
                 raise NotImplementedError
 
