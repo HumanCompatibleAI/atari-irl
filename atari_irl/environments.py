@@ -405,14 +405,14 @@ def state_preprocessor(d):
     return np.array([d[key] for key in sorted(d.keys())])
 
 
-def make_ple_game(game_class, obs_type):
+def make_ple_game(game_class, obs_type, **kwargs):
     class PLEGame(gym.Env):
         def __init__(self):
             os.putenv('SDL_VIDEODRIVER', 'fbcon')
             os.environ["SDL_VIDEODRIVER"] = "dummy"
             super().__init__()
             self.ple = ple.PLE(
-                game_class(),
+                game_class(**kwargs),
                 state_preprocessor=state_preprocessor,
                 display_screen=False
             )
@@ -497,26 +497,30 @@ no_modifiers = {
 
 PLEPong = make_ple_game(ple.games.pong.Pong, 'rgb')
 PLEPongState = make_ple_game(ple.games.pong.Pong, 'state_vector')
-PLECatcher = make_ple_game(ple.games.catcher.Catcher, 'rgb')
-PLECatcherState = make_ple_game(ple.games.catcher.Catcher, 'state_vector')
+PLECatcher = make_ple_game(ple.games.catcher.Catcher, 'rgb', init_lives=10000)
+PLECatcherState = make_ple_game(ple.games.catcher.Catcher, 'state_vector', init_lives=10000)
 
 gym.envs.register(
     id='PLEPong-v0',
+    max_episode_steps=100000,
     entry_point='atari_irl.environments:PLEPong'
 )
 
 gym.envs.register(
     id='PLEPongState-v0',
+    max_episode_steps=100000,
     entry_point='atari_irl.environments:PLEPongState'
 )
 
 gym.envs.register(
     id='PLECatcher-v0',
+    max_episode_steps=100000,
     entry_point='atari_irl.environments:PLECatcher'
 )
 
 gym.envs.register(
     id='PLECatcherState-v0',
+    max_episode_steps=100000,
     entry_point='atari_irl.environments:PLECatcherState'
 )
 
