@@ -137,6 +137,7 @@ def sample_trajectories(*, model, environments, one_hot_code=False, n_trajectori
     completed_trajectories = []
     observations = [[] for _ in range(environments.num_envs)]
     actions = [[] for _ in range(environments.num_envs)]
+    rewards = [[] for _ in range(environments.num_envs)]
 
     obs = environments.reset()
     while len(completed_trajectories) < n_trajectories:
@@ -148,20 +149,23 @@ def sample_trajectories(*, model, environments, one_hot_code=False, n_trajectori
             actions[i].append(a)
 
         # Figure out our consequences
-        obs, _, dones, _ = environments.step(acts)
+        obs, rews, dones, _ = environments.step(acts)
         if render:
             environments.render()
 
         # If we're done, then append that trajectory and restart
-        for i, done in enumerate(dones):
+        for i, (r, done) in enumerate(zip(rews, dones)):
+            rewards[i].append(r)
             if done:
                 completed_trajectories.append({
                     'observations': np.array(observations[i]),
                     # TODO(Aaron): get the real dim
-                    'actions': one_hot(actions[i], environments.action_space.n) if one_hot_code else np.vstack(actions[i])
+                    'actions': one_hot(actions[i], environments.action_space.n) if one_hot_code else np.vstack(actions[i]),
+                    'rewards': np.array(rewards[i]),
                 })
                 observations[i] = []
                 actions[i] = []
+                rewards[i] = []
 
     np.random.shuffle(completed_trajectories)
     return completed_trajectories[:n_trajectories]
