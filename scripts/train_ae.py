@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from collections import deque
 from baselines.ppo2 import ppo2
 import joblib
+import os
 import os.path as osp
 import argparse
 
@@ -20,6 +21,7 @@ parser.add_argument(
     choices=['score_trimmed', 'next_step', 'non_pixel_class', 'pixel_class'],
     type=str, default='pixel_class'
 )
+parser.add_argument('--out_dir', help='name of output directory')
 args = parser.parse_args()
 
 encoder = encoding.VariationalAutoEncoder
@@ -52,7 +54,8 @@ if args.encoder_type == 'non_pixel_class' and 'Pong' in args.env:
     
 with utils.TfEnvContext(tf_cfg, env_cfg) as context:
     utils.logger.configure()
-    dirname = utils.logger.get_dir() 
+    os.makedirs(args.out_dir)
+    dirname = args.out_dir
     print(f"logging in {dirname}")
     vae = encoder(
         obs_shape=context.env_context.environments.observation_space.shape,
