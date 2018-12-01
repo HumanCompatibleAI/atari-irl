@@ -176,14 +176,18 @@ class NormalAutoEncoder:
     def load(cls, load_path):
         data = joblib.load(load_path)
         self = cls(**data['kwargs'])
-        loaded_params = data['params']
+        self.restore_params(data['params'])
+        return self
+    
+    def restore_params(self, loaded_params):
         restores = []
         for p, loaded_p in zip(self.params, loaded_params):
             restores.append(p.assign(loaded_p))
         tf.get_default_session().run(restores)
-        return self
     
 class VariationalAutoEncoder:
+    # Variational here is actually not that helpful -- this is a "Pixel Class" autoencoder,
+    # as opposed to a normal one
     unk_mean = 255.0 / 2
     
     @staticmethod
@@ -356,12 +360,14 @@ class VariationalAutoEncoder:
     def load(cls, load_path):
         data = joblib.load(load_path)
         self = cls(**data['kwargs'])
-        loaded_params = data['params']
+        self.restore_params(data['params'])
+        return self
+    
+    def restore_params(self, loaded_params):
         restores = []
         for p, loaded_p in zip(self.params, loaded_params):
             restores.append(p.assign(loaded_p))
         tf.get_default_session().run(restores)
-        return self
 
 class ScoreTrimmedVariationalAutoEncoder(VariationalAutoEncoder):
     @staticmethod
@@ -503,6 +509,16 @@ def autoencode(*, tf_cfg, env_cfg):
 
             utils.logger.dumpkvs()
 
+def autoload(load_path):
+    data = joblib.load(load_path)
+    kwargs = data['kwargs']
+    
+    if 'd_classes' in kwargs:
+        return VariationalAutoEncoder.load(load_path)
+    elif 'trim_score' in kwargs:
+        return NormalAutoEncoder.load(load_path)
+    else:
+        raise NotImplemented
 
 if __name__ == '__main__':
     tf_config = tf.ConfigProto(
